@@ -4,6 +4,8 @@ import { UI } from './components/UI';
 import { Experience } from './components/Experience';
 import { Suspense } from 'react';
 import * as THREE from 'three';
+import { useConfiguratorStore } from './store';
+import { DEFAULT_CAMERA_POSITION, DEFAULT_CAMERA_TARGET } from './components/CameraManager';
 
 function App() {
   return (
@@ -12,17 +14,19 @@ function App() {
       <Canvas
         flat
         gl={{ 
-          antialias: true, 
-          outputColorSpace: 'srgb'
+          antialias: true,
+          outputColorSpace: THREE.SRGBColorSpace, 
+          toneMappingExposure: 1.2,
+          preserveDrawingBuffer: true, // Enable this to allow screenshots 
         }} 
         camera = {{
-          position: [-1, 1, 5],
+          position: DEFAULT_CAMERA_POSITION,
           fov: 45,  
         }}
         shadows={{ type: THREE.PCFShadowMap }}
       >
-        <color attach="background" args={['#555']} />
-        <fog attach="fog" args={['#555', 15, 25]} />
+        <color attach="background" args={['#14121c']} />
+        <fog attach="fog" args={['#14121c', 10, 40]} />
         <group position-y={-1}>
           <Suspense fallback={null}>
             <Experience />

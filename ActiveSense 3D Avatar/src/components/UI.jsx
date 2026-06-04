@@ -1,20 +1,43 @@
 import { useEffect } from 'react';
-import { useConfiguratorStore } from '../store';
+import { PHOTO_POSES, useConfiguratorStore } from '../store';
 import { pb } from '../store';
+import { UI_MODES } from '../store';
+
+const PosesBox = () => {
+	const curPose = useConfiguratorStore((state) => state.pose);
+	const setPose = useConfiguratorStore((state) => state.setPose);
+	return (
+		<div className="pointer-events-auto rounded-t-lg bg-gradient-to-br from-black/30 
+		to-indigo-900/20 backdrop-blur-sm drop-shadow-md flex p-6 gap-3">
+			{Object.values(PHOTO_POSES).map((pose) => (
+				<button
+					key={pose}
+					className={`transition-colors duration-200 font-medium flex-shrink-0 
+					border-b 
+					${curPose === PHOTO_POSES[pose]
+							? "text-white shadow-purple-100 border-b-white"
+							: "text-gray-200 hover:text-gray-100 border-b-transparent"
+						}`}
+					onClick={() => setPose(PHOTO_POSES[pose])}
+				>
+					{pose}
+				</button>
+			))}
+		</div>
+	);
+};
 
 const AssetsBox = () => {
 	const {
-		categories, 
-		currentCategory, 
-		fetchCategories, 
-		setCurrentCategory, 
+		categories,
+		currentCategory,
+		fetchCategories,
+		setCurrentCategory,
 		changeAsset,
 		customization,
 	} = useConfiguratorStore();
 
-	useEffect(() => {
-		fetchCategories();
-	}, []);
+
 
 	return (
 		<div className="rounded-t-lg bg-gradient-to-br from-black/30 to-indigo-900/20 backdrop-blur-sm
@@ -24,11 +47,10 @@ const AssetsBox = () => {
 					<button
 						key={category.id}
 						onClick={() => setCurrentCategory(category)}
-						className={`transition-colors duration-200 font-medium flex-shrink-0 border-b ${
-							currentCategory?.name === category.name
-							? "text-white shadow-purple-100 border-b-white"
-							: "text-gray-400 hover:text-gray-500 border-b-transparent"
-						}`}
+						className={`transition-colors duration-200 font-medium flex-shrink-0 border-b ${currentCategory?.name === category.name
+								? "text-white shadow-purple-100 border-b-white"
+								: "text-gray-200 hover:text-gray-100 border-b-transparent"
+							}`}
 					>
 						{category.name}
 					</button>
@@ -40,28 +62,28 @@ const AssetsBox = () => {
 						onClick={() => changeAsset(currentCategory.name, null)}
 						className={`w-20 h-20 rounded-xl overflow-hidden pointer-events-auto 
 							hover:opacity-100 transition-all border-2 duration-300 
-							${
-								!customization[currentCategory.name].asset
-									? "border-white opacity-100"
-									: "opacity-80 border-transparent"
+							bg-gradient-to-tr
+							${!customization[currentCategory.name].asset
+								? "border-white from-white/20 to-white/30"
+								: "from-black/70 to-black/20 border-black"
 							}`}
 					>
-					<div className="w-full h-full flex items-center justify-center bg-black/40 text-white">
-						<svg 
-							xmlns="http://www.w3.org/2000/svg" 
-							fill="none" 
-							viewBox="0 0 24 24" 
-							strokeWidth={1.5} 
-							stroke="currentColor" 
-							className="size-8"
-						>
-						<path 
-							strokeLinecap="round" 
-							strokeLinejoin="round" 
-							d="M6 18 18 6M6 6l12 12" 
-						/>
-						</svg>
-					</div>
+						<div className="w-full h-full flex items-center justify-center bg-black/40 text-white">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								strokeWidth={1.5}
+								stroke="currentColor"
+								className="size-8"
+							>
+								<path
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									d="M6 18 18 6M6 6l12 12"
+								/>
+							</svg>
+						</div>
 					</button>
 				)}
 				{currentCategory?.assets?.map((asset) => (
@@ -69,15 +91,16 @@ const AssetsBox = () => {
 						key={asset.thumbnail}
 						onClick={() => changeAsset(currentCategory.name, asset)}
 						className={`w-20 h-20 rounded-xl overflow-hidden pointer-events-auto 
-							hover:opacity-100 transition-all border-2 duration-300 ${
-								customization[currentCategory.name]?.asset?.id === asset.id
-									? "border-white opacity-100"
-									: "opacity-80 border-transparent"
+							hover:opacity-100 transition-all border-2 duration-300 
+							bg-gradient-to-tr 
+							${customization[currentCategory.name]?.asset?.id === asset.id
+								? "border-white from-white/20 to-white/30"
+								: "from-black/70 to-black/20 border-black"
 							}`}
 					>
 						<img
-							className="object-cover w-full h-full" 
-							src={pb.files.getURL(asset, asset.thumbnail)}	
+							className="object-cover w-full h-full"
+							src={pb.files.getURL(asset, asset.thumbnail)}
 						/>
 					</button>
 				))}
@@ -88,35 +111,66 @@ const AssetsBox = () => {
 const RandomizeButton = () => {
 	const randomize = useConfiguratorStore((state) => state.randomize);
 	return (
-		<button 
+		<button
 			className="rounded-lg bg-indigo-500 hover:bg-indigo-600 transition-colors duration-300
 			text-white font-medium px-4 py-3 pointer-events-auto drop-shadow-md"
 			onClick={randomize}
+		>
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				fill="none"
+				viewBox="0 0 24 24"
+				strokeWidth={1.5}
+				stroke="currentColor"
+				className="size-6"
+			>
+				<path
+					strokeLinecap="round"
+					strokeLinejoin="round"
+					d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 0 0-3.7-3.7 48.678 48.678 0 0 
+				0-7.324 0 4.006 4.006 0 0 0-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3-3-3m-12 
+				3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 0 0 3.7 3.7 48.656 48.656 0 0 0 7.324 0 4.006 
+				4.006 0 0 0 3.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3-3 3"
+				/>
+			</svg>
+		</button>
+	);
+}
+const ScreenshotButton = () => {
+	const triggerScreenshot = useConfiguratorStore((state) => state.triggerScreenshot);
+	return (
+		<button
+			className="rounded-lg bg-indigo-500 hover:bg-indigo-600 transition-colors duration-300
+			text-white font-medium px-4 py-3 pointer-events-auto drop-shadow-md"
+			onClick={triggerScreenshot}
 		>
 			<svg 
 				xmlns="http://www.w3.org/2000/svg" 
 				fill="none" 
 				viewBox="0 0 24 24" 
-				strokeWidth={1.5} 
+				strokeWidth="1.5" 
 				stroke="currentColor" 
 				className="size-6"
 			>
-			<path 
-				strokeLinecap="round" 
-				strokeLinejoin="round" 
-				d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 0 0-3.7-3.7 48.678 48.678 0 0 
-				0-7.324 0 4.006 4.006 0 0 0-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3-3-3m-12 
-				3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 0 0 3.7 3.7 48.656 48.656 0 0 0 7.324 0 4.006 
-				4.006 0 0 0 3.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3-3 3" 
-			/>
+				<path 
+					strokeLinecap="round"
+					strokeLinejoin="round" 
+					d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" 
+				/>
+				<path 
+					strokeLinecap="round" 
+					strokeLinejoin="round" 
+					d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" 
+				/>
 			</svg>
 		</button>
 	);
 }
+
 const DownloadButton = () => {
 	const download = useConfiguratorStore((state) => state.download);
 	return (
-		<button 
+		<button
 			className="rounded-lg bg-indigo-500 hover:bg-indigo-600 transition-colors duration-300
 			text-white font-medium px-4 py-3 pointer-events-auto drop-shadow-md"
 			onClick={download}
@@ -127,8 +181,15 @@ const DownloadButton = () => {
 }
 
 export const UI = () => {
-	const currentCategory =	 useConfiguratorStore((state) => state.currentCategory);
-	const customization = useConfiguratorStore((state) => state.customization);	
+	const currentCategory = useConfiguratorStore((state) => state.currentCategory);
+	const customization = useConfiguratorStore((state) => state.customization);
+	const mode = useConfiguratorStore((state) => state.mode);
+	const setMode = useConfiguratorStore((state) => state.setMode);
+
+	const fetchCategories = useConfiguratorStore((state) => state.fetchCategories);
+	useEffect(() => {
+		fetchCategories();
+	}, [fetchCategories]);
 	return (
 		<main className="pointer-events-none fixed z-10 inset-0 select-none">
 			<div className="mx-auto h-full max-w-screen-xl w-full flex flex-col justify-between">
@@ -138,17 +199,48 @@ export const UI = () => {
 						className="pointer-events-auto"
 						href= ---your website link here---
 						 */}
-						<img className="w-20" src ="/images/ActiveSense_appLogo.svg" />
+						<img className="w-20" src="/images/ActiveSense_appLogo.svg" />
 					</a>
 					<div className="flex items-center gap-2">
 						<RandomizeButton />
+						<ScreenshotButton />
 						<DownloadButton />
 					</div>
 				</div>
-				<div className="flex flex-col">
-					{currentCategory?.colourPalette && 
-						customization[currentCategory.name] && <ColorPicker />}
-					<AssetsBox />
+				<div className="px-10 flex flex-col">
+					{mode === UI_MODES.CUSTOMIZE && (
+						<>
+							{currentCategory?.colourPalette &&
+								customization[currentCategory.name] && <ColorPicker />}
+							<AssetsBox />
+						</>
+					)}
+					{mode === UI_MODES.PHOTO && <PosesBox />}
+					<div className="flex justify-stretch">
+						<button
+							className={`flex-1 pointer-events-auto p-4 text-white transition-colors
+						duration-200 font-medium 
+						${mode === UI_MODES.CUSTOMIZE
+									? "bg-indigo-500/90"
+									: "bg-indigo-500/30 hover:bg-indigo-500/50"
+								}`}
+							onClick={() => setMode(UI_MODES.CUSTOMIZE)}
+						>
+							Customize Avatar
+						</button>
+						<div className={"w-px bg-white/30"}></div>
+						<button
+							className={`flex-1 pointer-events-auto p-4 text-white transition-colors
+							duration-200 font-medium
+							${mode === UI_MODES.PHOTO
+									? "bg-indigo-500/90"
+									: "bg-indigo-500/30 hover:bg-indigo-500/50"
+								}`}
+							onClick={() => setMode(UI_MODES.PHOTO)}
+						>
+							Photo Booth
+						</button>
+					</div>
 				</div>
 			</div>
 		</main>
@@ -157,13 +249,13 @@ export const UI = () => {
 
 const ColorPicker = () => {
 	const updateColor = useConfiguratorStore((state) => state.updateColor);
-	const currentCategory =	 useConfiguratorStore((state) => state.currentCategory);
+	const currentCategory = useConfiguratorStore((state) => state.currentCategory);
 	const handleColorChange = (color) => {
 		updateColor(color);
 	};
 	const customization = useConfiguratorStore((state) => state.customization);
 
-	if(!customization[currentCategory.name]?.asset) {
+	if (!customization[currentCategory.name]?.asset) {
 		return null;
 	}
 
@@ -175,13 +267,12 @@ const ColorPicker = () => {
 					key={`${index}-${colour}`}
 					className={`w-10 h-10 p-1.5 drop-shadow-md bg-black/20 shrink-0 rounded-lg overflow-hidden
 						transition-all duration-300 border-2 
-						${
-							customization[currentCategory.name]?.colour === colour
-								? "border-white"
-								: "border-transparent"
+						${customization[currentCategory.name]?.colour === colour
+							? "border-white"
+							: "border-transparent"
 						}
 				`}
-				onClick={() => handleColorChange(colour)}
+					onClick={() => handleColorChange(colour)}
 				>
 					<div
 						className="w-full h-full rounded-md"

@@ -7,10 +7,12 @@ import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter";
 export const Avatar = ({ ...props}) => {
   const group = useRef();
   const { nodes, materials} = useGLTF("/models/Armature.glb");
-  const { animations} = useFBX("/models/Idle.fbx");
+  const { animations } = useGLTF("/models/Poses.glb");
   const customization = useConfiguratorStore((state) => state.customization);
   const { actions } = useAnimations(animations, group);
   const setDownload = useConfiguratorStore((state) => state.setDownload);
+
+  const pose = useConfiguratorStore((state) => state.pose);
 
   if (!nodes || !nodes.Plane || !nodes.mixamorigHips) {
     return null;
@@ -49,8 +51,10 @@ export const Avatar = ({ ...props}) => {
   }, []);
   
   useEffect(() => {
-    actions["mixamo.com"]?.play();
-  }, [actions]);
+    // Safely stop previous animations before crossfading
+    actions[pose]?.reset().fadeIn(0.2).play();
+    return () => actions[pose]?.fadeOut(0.2);
+  }, [actions, pose]);
 
   return (
     <group ref={group} {...props} dispose={null}>
