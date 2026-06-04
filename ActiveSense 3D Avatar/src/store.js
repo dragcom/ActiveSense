@@ -9,9 +9,33 @@ if(!pocketBaseUrl) {
   throw new Error("VITE_POCKETBASE_URL is required in .env.local");
 }
 
+export const PHOTO_POSES = {
+  Idle: "Idle",
+  Chill: "Chill",
+  Cool: "Cool",
+  Punch: "Punch",
+  Ninja: "Ninja",
+  King: "King",
+  Busy: "Busy",
+};
+
+export const UI_MODES = {
+  PHOTO: "photo",
+  CUSTOMIZE: "customize",
+}
+
 export const pb = new PocketBase(pocketBaseUrl);
 
 export const useConfiguratorStore = create((set, get) => ({
+  mode: UI_MODES.CUSTOMIZE,
+  setMode: (mode) => {
+    set({ mode });
+    if (mode === UI_MODES.CUSTOMIZE) {
+      set({ pose: PHOTO_POSES.Idle });
+    }
+  },
+  pose: PHOTO_POSES.Idle,
+  setPose: (pose) => set({ pose }),
   categories: [],
   currentCategory: null,
   assets: [],
@@ -22,6 +46,10 @@ export const useConfiguratorStore = create((set, get) => ({
   customization: {}, 
   download: () => {},
   setDownload: (download) => set({ download }),
+  //screenshot: () => {},
+  //setDownload: (download) => set({ download }),
+  screenshotRequested: false, 
+  triggerScreenshot: () => set({ screenshotRequested: true }),
   
   updateColor: (colour) => {
     set((state) => ({
@@ -47,7 +75,7 @@ export const useConfiguratorStore = create((set, get) => ({
       const categories = await pb.collection('CustomizationGroups').getFullList({
         sort: "+position",
         $autoCancel: false,
-        expand: "colourPalette",
+        expand: "colourPalette,cameraPlacement",
       });
       
       const assets = await pb.collection('CustomizationAssets').getFullList({
