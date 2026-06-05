@@ -6,6 +6,7 @@ import { Suspense } from 'react';
 import * as THREE from 'three';
 import { useConfiguratorStore } from './store';
 import { DEFAULT_CAMERA_POSITION, DEFAULT_CAMERA_TARGET } from './components/CameraManager';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
 
 function App() {
   return (
@@ -32,6 +33,9 @@ function App() {
             <Experience />
           </Suspense>
         </group>
+        <EffectComposer>
+          <Bloom mipmapBlur luminanceThreshold={1.2} intensity={1.2}/>
+        </EffectComposer>
       </Canvas>
     </>
   )

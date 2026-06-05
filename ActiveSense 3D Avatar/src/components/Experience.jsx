@@ -1,10 +1,12 @@
-import { Environment, OrbitControls, Backdrop } from '@react-three/drei'
+import { Environment, OrbitControls, Backdrop, Gltf, Float, useProgress} from '@react-three/drei'
 import { Avatar } from './Avatar';
 import { CameraManager } from './CameraManager';
-import { useEffect } from 'react';
+import { useEffect, useState, useRef} from 'react';
 import { useThree } from '@react-three/fiber';
 import { useConfiguratorStore } from '../store';
 import { useFrame } from '@react-three/fiber';
+import { useSpring, animated} from '@react-spring/three';
+import { LoadingAvatar } from './LoadingAvatar';
 
 export const Experience = () => {
 	const { gl } = useThree();
@@ -78,12 +80,42 @@ export const Experience = () => {
 			logo.src = "/images/ActiveSense_appLogo.svg";
 		};
 	});
+
+	const {active} = useProgress();
+	const [loading, setLoading] = useState(active);
+	const setLoadingAt = useRef(0);
+
+	useEffect(() => {
+		let timeout;
+		if (active) {
+			timeout = setTimeout(() => {
+				setLoading(true);
+				setLoadingAt.current = Date.now();
+			}, 50); //show loading only after 50ms
+		} else {
+			timeout = setTimeout(() => {
+				setLoading(false);
+			}, Math.max(0, 2000 - (Date.now() - setLoadingAt.current)));
+		}
+		return () => clearTimeout(timeout);
+	}, [active]);
+
+	useEffect(() => {
+		setLoading(active);
+	}, [active])
+
+	const {scale, spin, floatHeight} = useSpring({
+		scale: loading ? 0.5 : 1,
+		spin: loading ? Math.PI * 8 : 0,
+		floatHeight: loading ? 0.5 : 0,
+	});
+
 	return (
 		<>
 			<CameraManager />
 			<Environment preset="sunset" environmentIntensity={0.3} />
 
-			<mesh receiveShadow rotation-x={-Math.PI / 2}>
+			<mesh receiveShadow rotation-x={-Math.PI / 2} position-y={-0.31}>
 				<planeGeometry args={[100, 100]} />
 				<meshStandardMaterial color="#333" roughness={0.85} />
 			</mesh>
@@ -107,8 +139,22 @@ export const Experience = () => {
 				intensity={8}
 				color={"#3cb1ff"}
 			/>
-			<Avatar />
-
+			<Float floatIntensity={loading ? 1 : 0} speed={loading ? 6: 0}>
+				<animated.group
+					scale={scale}
+					position-y={floatHeight}
+					rotation-y={spin}
+				>
+					<Avatar />
+				</animated.group>
+			</Float>
+			<Gltf
+				position-y={-0.31}
+				src="/models/Teleporter Base.glb"
+				castShadow
+				receiveShadow
+			/>
+			<LoadingAvatar loading={loading} />
 		</>
 	);
 };
