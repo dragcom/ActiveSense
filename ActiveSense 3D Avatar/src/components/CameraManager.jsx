@@ -5,13 +5,15 @@ import { useEffect } from "react";
 import { useConfiguratorStore } from "../store";
 import { UI_MODES } from "../store";
 
+export const START_CAMERA_POSITION = [500, 1000, 1000];
 export const DEFAULT_CAMERA_POSITION = [-1, 1, 5];
 export const DEFAULT_CAMERA_TARGET = [0, 0, 0];
 
 export const CameraManager = () => {
 	const controls = useRef();
 	const currentCategory =	 useConfiguratorStore((state) => state.currentCategory);
-	const mode = useConfiguratorStore((state) => state.mode);	
+	const mode = useConfiguratorStore((state) => state.mode);
+	const initialLoading = useConfiguratorStore((state) => state.loading);	
 	/*useControls({
 		getCameraPosition: button(() => {
 			console.log("Camera Position", [...controls.current.getPosition()]);
@@ -22,7 +24,13 @@ export const CameraManager = () => {
 	});*/
 
 	useEffect(() => {
-		if (mode === UI_MODES.CUSTOMIZE && currentCategory?.expand?.cameraPlacement) {
+		if (initialLoading) {
+			controls.current.setLookAt(
+				...START_CAMERA_POSITION,
+				...DEFAULT_CAMERA_TARGET,
+			);
+		}
+		else if (mode === UI_MODES.CUSTOMIZE && currentCategory?.expand?.cameraPlacement) {
 			controls.current.setLookAt(
 				...currentCategory.expand.cameraPlacement.position,
 				...currentCategory.expand.cameraPlacement.target,
@@ -35,7 +43,7 @@ export const CameraManager = () => {
 				true
 			);
 		}
-	}, [currentCategory, mode]);
+	}, [currentCategory, mode, initialLoading]);
 	return (
 		<CameraControls
 			ref={controls}

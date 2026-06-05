@@ -27,6 +27,7 @@ export const UI_MODES = {
 export const pb = new PocketBase(pocketBaseUrl);
 
 export const useConfiguratorStore = create((set, get) => ({
+  loading: true,
   mode: UI_MODES.CUSTOMIZE,
   setMode: (mode) => {
     set({ mode });
@@ -111,7 +112,8 @@ export const useConfiguratorStore = create((set, get) => ({
         categories, 
         currentCategory: categories[0] || null, 
         assets, 
-        customization 
+        customization,
+        loading: false,
       });
 
     } catch (error) {

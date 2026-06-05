@@ -3,6 +3,9 @@ import { useGLTF, useAnimations, useFBX} from "@react-three/drei";
 import { pb, useConfiguratorStore } from "../store";
 import { Asset } from "./Asset";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter";
+import { prune, dedup, draco, quantize } from "@gltf-transform/functions";
+import { NodeIO } from "@gltf-transform/core";
+
 
 export const Avatar = ({ ...props}) => {
   const group = useRef();
@@ -23,10 +26,27 @@ export const Avatar = ({ ...props}) => {
       const exporter = new GLTFExporter();
       exporter.parse(
         group.current,
-        function (result) {
+        async function (result) {
           // Save the blob result to a file
+          const io = new NodeIO();
+          //Read in. Uint8Array -> Document
+          const document = await io.readBinary(new Uint8Array(result)); 
+          await document.transform(
+            //Remove unused nodes, textures, and other data.
+            prune(),
+            //Remove duplicate vertex or texture data, if any.
+            dedup(),
+            //Compress mesh geometry with Draco.
+            draco(),
+            //Quantize mesh geometry
+            quantize()
+          );
+
+          //Write
+          const glb = await io.writeBinary(document); // Document -> Uint8Array
+
           save (
-            new Blob([result], { type: "application/octet-stream" }),
+            new Blob([glb], { type: "application/octet-stream" }),
             `avatar_${+ new Date()}.glb`
           );
         },
