@@ -149,7 +149,7 @@ export const Experience = () => {
 				</animated.group>
 			</Float>
 			<Gltf
-				position-y={-0.31}
+				position-y={-0.41}
 				src="/models/Teleporter Base.glb"
 				castShadow
 				receiveShadow

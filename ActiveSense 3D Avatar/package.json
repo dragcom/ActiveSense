@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@emnapi/runtime": "^1.10.0",
     "@gltf-transform/core": "^4.3.0",
     "@gltf-transform/functions": "^4.3.0",
     "@react-spring/three": "^10.1.0",
