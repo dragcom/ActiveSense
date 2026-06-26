@@ -37,11 +37,9 @@ const AssetsBox = () => {
 		customization,
 	} = useConfiguratorStore();
 
-
-
 	return (
-		<div className="rounded-t-lg bg-gradient-to-br from-black/30 to-indigo-900/20 backdrop-blur-sm
-		drop-shadow-md flex flex-col py-6 gap-3">
+		<div className="pointer-events-auto overflow-y-auto touch-pan-y rounded-t-lg bg-gradient-to-br from-black/30 to-indigo-900/20 backdrop-blur-sm
+        drop-shadow-md flex flex-col py-6 gap-3">
 			<div className="flex items-center gap-8 pointer-events-auto overflow-x-auto noscrollbar px-6 pb-2">
 				{categories?.map((category) => (
 					<button
@@ -168,17 +166,41 @@ const ScreenshotButton = () => {
 }
 
 const DownloadButton = () => {
-	const download = useConfiguratorStore((state) => state.download);
-	return (
-		<button
-			className="rounded-lg bg-indigo-500 hover:bg-indigo-600 transition-colors duration-300
-			text-white font-medium px-4 py-3 pointer-events-auto drop-shadow-md"
-			onClick={download}
-		>
-			Download
-		</button>
-	);
-}
+    const download = useConfiguratorStore((state) => state.download);
+    const customization = useConfiguratorStore((state) => state.customization);
+
+    const handleSaveOrDownload = () => {
+        if (window.ReactNativeWebView) {
+            const avatarConfig = Object.keys(customization).reduce((acc, categoryName) => {
+                const item = customization[categoryName];
+                acc[categoryName] = {
+                    assetId: item?.asset?.id || null,
+                    color: item?.colour || null
+                };
+                return acc;
+            }, {});
+
+            window.ReactNativeWebView.postMessage(
+                JSON.stringify({
+                    type: 'SAVED_AVATAR',
+                    data: avatarConfig
+                })
+            );
+        } else {
+            download();
+        }
+    };
+
+    return (
+        <button
+            className="rounded-lg bg-indigo-500 hover:bg-indigo-600 transition-colors duration-300
+            text-white font-medium px-4 py-3 pointer-events-auto drop-shadow-md"
+            onClick={handleSaveOrDownload}
+        >
+            {window.ReactNativeWebView ? "Confirm Avatar" : "Download"}
+        </button>
+    );
+};
 
 export const UI = () => {
 	const currentCategory = useConfiguratorStore((state) => state.currentCategory);
@@ -207,10 +229,6 @@ export const UI = () => {
 			<div className="mx-auto h-full max-w-screen-xl w-full flex flex-col justify-between">
 				<div className="flex justify-between items-center p-10">
 					<a>
-						{/* 
-						className="pointer-events-auto"
-						href= ---your website link here---
-						 */}
 						<img className="w-20" src="/images/ActiveSense_appLogo.svg" />
 					</a>
 					<div className="flex items-center gap-2">
@@ -272,8 +290,8 @@ const ColorPicker = () => {
 	}
 
 	return (
-		<div className="pointer-events-auto relative flex gap-2 max-w-full overflow-x-auto backdrop-blur-sm 
-		py-2 drop-shadow-md">
+		<div className="pointer-events-auto touch-pan-x relative flex gap-2 max-w-full overflow-x-auto backdrop-blur-sm 
+        py-2 drop-shadow-md">
 			{currentCategory.expand?.colourPalette?.colours?.map((colour, index) => (
 				<button
 					key={`${index}-${colour}`}

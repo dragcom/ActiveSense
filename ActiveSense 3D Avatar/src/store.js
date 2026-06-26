@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { MeshStandardMaterial } from 'three';
 import PocketBase from 'pocketbase';
+import { persist } from 'zustand/middleware';
 
 const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
@@ -26,8 +27,9 @@ export const UI_MODES = {
 
 export const pb = new PocketBase(pocketBaseUrl);
 
-export const useConfiguratorStore = create((set, get) => ({
+export const useConfiguratorStore = create(persist((set, get) => ({
   loading: true,
+  viewOnly: false,
   mode: UI_MODES.CUSTOMIZE,
   setMode: (mode) => {
     set({ mode });
@@ -47,8 +49,6 @@ export const useConfiguratorStore = create((set, get) => ({
   customization: {}, 
   download: () => {},
   setDownload: (download) => set({ download }),
-  //screenshot: () => {},
-  //setDownload: (download) => set({ download }),
   screenshotRequested: false, 
   triggerScreenshot: () => set({ screenshotRequested: true }),
   
@@ -84,35 +84,30 @@ export const useConfiguratorStore = create((set, get) => ({
         $autoCancel: false,
       });
 
-      const customization = {};
+      const newCustomization = { ...get().customization };
       
       categories.forEach(category => {
         category.assets = assets.filter((asset) => asset.group === category.id);
-        
-        // Safely pick the first color or fall back to a placeholder
-        const availableColours = category.expand?.colourPalette?.colours;
-        const defaultColour = (availableColours && availableColours.length > 0) 
-          ? availableColours[0] 
-          : "#ffffff"; // Fallback to white if no palette exists
+        if (!newCustomization[category.name]) {
+            const availableColours = category.expand?.colourPalette?.colours;
+            const defaultColour = (availableColours && availableColours.length > 0) 
+              ? availableColours[0] 
+              : "#ffffff";
 
-        customization[category.name] = {
-          colour: defaultColour,
-          asset: null,
-        };
-        
-        if(category.startingAsset) {
-          customization[category.name].asset = category.assets.find(
-            (asset) => asset.id === category.startingAsset
-          );
+            newCustomization[category.name] = {
+              colour: defaultColour,
+              asset: category.startingAsset 
+                ? category.assets.find((asset) => asset.id === category.startingAsset) 
+                : null,
+            };
         }
       });
 
-      // currentCategory must point to the first item (categories[0]), not the whole array
       set({ 
         categories, 
         currentCategory: categories[0] || null, 
         assets, 
-        customization,
+        customization: newCustomization,
         loading: false,
       });
 
@@ -145,11 +140,8 @@ export const useConfiguratorStore = create((set, get) => ({
       const colours = category.expand?.colourPalette?.colours || [];
       
       let randomAsset = null;
-
-      // 1. SAFE ASSET RANDOMIZATION (Handles empty or removable assets safely)
       if (assets.length > 0) {
         if (category.removable) {
-          // 25% chance to remove/leave item empty, 75% chance to pick a random asset
           const shouldKeep = randInt(1, 4) > 1;
           if (shouldKeep) {
             randomAsset = assets[randInt(0, assets.length - 1)];
@@ -159,24 +151,63 @@ export const useConfiguratorStore = create((set, get) => ({
         }
       }
 
-      // 2. SAFE COLOUR RANDOMIZATION
       let randomColour = newCustomization[category.name]?.colour || "";
       if (colours.length > 0 && randomAsset) {
         randomColour = colours[randInt(0, colours.length - 1)];
       }
 
-      // 3. APPLY TO STATE
+
       newCustomization[category.name] = {
         asset: randomAsset,
-        colour: randomColour, // Fixed: Unified key property name to 'colour'
+        colour: randomColour,
       };
 
-      // 4. SYNC THREE.JS SKIN MATERIAL
       if (category.name === "Head" && randomColour) {
         get().updateSkin(randomColour);
       }
     });
 
     set({ customization: newCustomization });
-  }
-}));
+  },
+
+  setHydratedState: (payload) => set((state) => {
+    const { avatarConfig, viewOnly } = payload;
+    const nextViewOnly = viewOnly !== undefined ? viewOnly : state.viewOnly;
+    let newCustomization = { ...state.customization };
+    
+    if (avatarConfig) {
+        Object.keys(avatarConfig).forEach((categoryName) => {
+            const config = avatarConfig[categoryName];
+            const categoryDef = state.categories.find((c) => c.name === categoryName);
+            
+            if (categoryDef) {
+                const foundAsset = config.assetId 
+                    ? categoryDef.assets.find((a) => a.id === config.assetId)
+                    : null;
+
+                newCustomization[categoryName] = {
+                    ...newCustomization[categoryName],
+                    asset: foundAsset || null,
+                    colour: config.color || (categoryDef.colourPalette?.colours[0] || null)
+                };
+            }
+        });
+    }
+
+    return { 
+        customization: newCustomization,
+        viewOnly: nextViewOnly 
+    };
+  }),
+}),
+{
+      name: 'avatar-storage',
+      partialize: (state) => ({
+        customization: state.customization,
+        mode: state.mode,
+        pose: state.pose,
+        viewOnly: state.viewOnly,
+      }),
+    }
+  )
+);

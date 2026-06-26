@@ -89,7 +89,11 @@ export default function OnboardingScreen({ navigation }: Props) {
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Name</Text>
               <TextInput
+<<<<<<< HEAD
                 value={name}
+=======
+                value={name}  
+>>>>>>> c1de6a3 (Modifying 3D avatar code for integration)
                 onChangeText={setName}
                 placeholder="Your name"
                 placeholderTextColor={colors.text.tertiary}

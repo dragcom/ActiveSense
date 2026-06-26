@@ -6,7 +6,6 @@ import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter";
 import { prune, dedup, draco, quantize } from "@gltf-transform/functions";
 import { NodeIO } from "@gltf-transform/core";
 
-
 export const Avatar = ({ ...props}) => {
   const group = useRef();
   const { nodes, materials} = useGLTF("/models/Armature.glb");
@@ -14,6 +13,7 @@ export const Avatar = ({ ...props}) => {
   const customization = useConfiguratorStore((state) => state.customization);
   const { actions } = useAnimations(animations, group);
   const setDownload = useConfiguratorStore((state) => state.setDownload);
+  const skin = useConfiguratorStore((state) => state.skin);
 
   const pose = useConfiguratorStore((state) => state.pose);
 
@@ -71,29 +71,34 @@ export const Avatar = ({ ...props}) => {
   }, []);
   
   useEffect(() => {
-    // Safely stop previous animations before crossfading
     actions[pose]?.reset().fadeIn(0.2).play();
     return () => actions[pose]?.fadeOut(0.2);
   }, [actions, pose]);
+
+  console.log("Avatar current customization object:", customization);
+  Object.keys(customization).forEach(key => {
+      if(customization[key]?.asset?.url) {
+          console.log(`Rendering asset for ${key}:`, customization[key].asset.url);
+      }
+  });
 
   return (
     <group ref={group} {...props} dispose={null}>
       <group name="Scene">
         <group name="Armature" rotation={[Math.PI / 2, 0, 0]} scale={0.01}>
-          {/* Main Body Mesh */}
           <skinnedMesh
             name="Plane"
             geometry={nodes.Plane.geometry}
-            material={nodes.Plane.material}
+            material={skin}
             skeleton={nodes.Plane.skeleton}
             castShadow
             receiveShadow
           />
           <primitive object={nodes.mixamorigHips} />
           {Object.keys(customization).map(
-            (key) =>
+            (key) => 
               customization[key]?.asset?.url && (
-                <Suspense key={customization[key].asset.id} fallback={null}>
+                <Suspense key={customization[key].asset?.id || key} fallback={null}>
                   <Asset
                     categoryName={key}
                     url={pb.files.getURL(

@@ -20,3 +20,11 @@ body {
 .noscrollbar::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
 }
+
+.scrollable-assets-container {
+  overflow-y: auto !important;
+  pointer-events: auto !important;
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch !important;
+  z-index: 9999 !important;
+}

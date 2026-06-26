@@ -4,19 +4,19 @@ import { useConfiguratorStore } from '../store';
 
 export const Asset = ({ url, categoryName, skeleton }) => {
   const { scene: cachedScene } = useGLTF(url);
-
-  // 1. Clone scene and duplicate materials
   const clonedScene = useMemo(() => {
     const clone = cachedScene.clone();
     clone.traverse((child) => {
-      if (child.isMesh && child.material) {
+      if (child.isMesh) {
         child.material = child.material.clone();
+        child.castShadow = true;
+        child.receiveShadow = true;
+        if (skeleton) child.skeleton = skeleton;
       }
     });
     return clone;
-  }, [cachedScene]);
+  }, [cachedScene, skeleton]); 
 
-  // 2. Fetch state from store
   const customization = useConfiguratorStore((state) => state.customization);
   const skin = useConfiguratorStore((state) => state.skin); 
 
@@ -41,7 +41,6 @@ export const Asset = ({ url, categoryName, skeleton }) => {
     return items;
   }, [clonedScene, skin]);
 
-  // 4. Update clothing colors
   useEffect(() => {
     if (!assetColour) return;
 
@@ -55,19 +54,15 @@ export const Asset = ({ url, categoryName, skeleton }) => {
     });
   }, [assetColour, clonedScene]);
 
-  // Dynamically change the color of the skin meshes
   useEffect(() => {
     if (!skin) return;
 
     clonedScene.traverse((child) => {
       if (child.isMesh && child.material) {
-        // Target any material with "Skin_" in its name
         if (child.material.name.includes("Skin_")) {
-          // If skin is a hex color string, apply it directly
           if (typeof skin === 'string') {
             child.material.color.set(skin);
           } 
-          // If skin is a full Material object instead of a color string
           else if (skin.isMaterial) {
             child.material = skin;
           }
@@ -77,7 +72,6 @@ export const Asset = ({ url, categoryName, skeleton }) => {
     });
   }, [skin, clonedScene]);
 
-  // 6. Link skeleton bones
   useEffect(() => {
     if (!skeleton) return;
 
@@ -90,7 +84,9 @@ export const Asset = ({ url, categoryName, skeleton }) => {
     });
   }, [clonedScene, skeleton]);
 
-  if (!skeleton) return null;
-
-  return <primitive object={clonedScene} />;
+  return (
+    <group visible={!!skeleton}>
+      <primitive object={clonedScene} />
+    </group>
+  );
 };

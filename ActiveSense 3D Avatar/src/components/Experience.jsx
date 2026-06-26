@@ -14,14 +14,8 @@ export const Experience = () => {
 
 	useFrame(() => {
 		if (!screenshotRequested) return;
-
-		// 1. Instantly capture the WebGL pixel layer safely inside the active drawing lifecycle frame
 		const webglDataUrl = gl.domElement.toDataURL("image/png");
-
-		// 2. Flip the state flag off immediately to avoid an infinite loop loop
 		useConfiguratorStore.setState({ screenshotRequested: false });
-
-		// 3. Assemble the offscreen 2D canvas workspace
 		const baseSceneImage = new Image();
 		baseSceneImage.src = webglDataUrl;
 
@@ -33,49 +27,48 @@ export const Experience = () => {
 
 			if (!overlayContext) return;
 
-			// Draw our processed Three.js background layer
 			overlayContext.drawImage(baseSceneImage, 0, 0);
-
-			// Helper function to process the final file download pipeline
 			const executeDownload = () => {
-				const link = document.createElement("a");
-				const date = new Date();
-				const dateString = date.toISOString().split("T")[0]; // Fixed split index parameter format
-				const timeString = date.toLocaleTimeString().replace(/:/g, "-");
+            const base64Image = overlayCanvas.toDataURL("image/png");
 
-				link.setAttribute("download", `Avatar_${dateString}_${timeString}.png`);
-				link.setAttribute("href", overlayCanvas.toDataURL("image/png"));
+            if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(
+                    JSON.stringify({
+                        type: 'CAPTURE_SCREENSHOT',
+                        data: base64Image 
+                    })
+                );
+            } else {
+                const link = document.createElement("a");
+                const date = new Date();
+                const dateString = date.toISOString().split("T")[0];
+                const timeString = date.toLocaleTimeString().replace(/:/g, "-");
 
-				document.body.appendChild(link);
-				link.click();
-				document.body.removeChild(link);
-			};
+                link.setAttribute("download", `Avatar_${dateString}_${timeString}.png`);
+                link.setAttribute("href", base64Image);
 
-			// 4. Initialize your watermark logo asset using the correct SVG path
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        };
+
 			const logo = new Image();
 
 			logo.onerror = () => {
 				console.warn("Watermark logo failed to load. Downloading clean avatar snapshot fallback.");
-				executeDownload(); // Fallback to download without the logo if file path breaks
+				executeDownload();
 			};
 
 			logo.onload = () => {
-				// 1. Establish your target baseline height for the canvas layout corner
 				const logoHeight = 100;
-
-				// 2. DYNAMICALLY SCALE WIDTH: (Original Width / Original Height) * Target Height
-				// This maintains the exact aspect ratio perfectly so it never stretches or flattens
 				const logoWidth = (logo.naturalWidth / logo.naturalHeight) * logoHeight;
-
-				// 3. Position the watermarked logo vector safely in the bottom right corner
 				const x = overlayCanvas.width - logoWidth - 42;
 				const y = overlayCanvas.height - logoHeight - 42;
 
 				overlayContext.drawImage(logo, x, y, logoWidth, logoHeight);
 				executeDownload();
 			};
-
-			// Target the correct asset filename matching your public folder structure
 			logo.crossOrigin = "anonymous";
 			logo.src = "/images/ActiveSense_appLogo.svg";
 		};
@@ -91,7 +84,7 @@ export const Experience = () => {
 			timeout = setTimeout(() => {
 				setLoading(true);
 				setLoadingAt.current = Date.now();
-			}, 50); //show loading only after 50ms
+			}, 50); //after 50ms
 		} else {
 			timeout = setTimeout(() => {
 				setLoading(false);
