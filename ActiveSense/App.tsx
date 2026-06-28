@@ -1,34 +1,32 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, StatusBar, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
-import * as NavigationBar from 'expo-navigation-bar'; 
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AppNavigator from './src/navigation/AppNavigator';
 import { hasCompletedOnboarding } from './src/services/storage';
 import { colors } from './src/theme/colors';
 import { RootStackParamList } from './src/navigation/types';
 
+// App is the root component that decides whether to show onboarding or the main tabs.
 export default function App() {
-  const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('AuthLanding');
+  const hasWorkoutTestRoute =
+    Platform.OS === 'web' &&
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('workoutSession') === '1';
+  // The first route depends on whether this device has completed onboarding before.
+  const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>(
+    hasWorkoutTestRoute ? 'WorkoutSession' : 'AuthLanding',
+  );
   const [isReady, setIsReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (Platform.OS === 'android') {
-      const configureNavigationBar = async () => {
-        try {
-          await NavigationBar.setVisibilityAsync('hidden');
-          await NavigationBar.setBehaviorAsync('overlay-swipe');
-        } catch (error) {
-          console.warn('Failed to configure navigation bar:', error);
-        }
-      };
-      configureNavigationBar();
-    }
-  }, []);
-
+  // Read the local onboarding flag before rendering navigation.
   const loadOnboardingState = async () => {
     setIsReady(false);
     setLoadError(null);
     try {
+      if (hasWorkoutTestRoute) {
+        setInitialRoute('WorkoutSession');
+        return;
+      }
       const completed = await hasCompletedOnboarding();
       setInitialRoute(completed ? 'Main' : 'AuthLanding');
     } catch (error) {
@@ -39,10 +37,12 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Run once when the app opens so navigation starts in the right place.
     loadOnboardingState();
   }, []);
 
   if (!isReady) {
+    // Keep the app calm while AsyncStorage is being checked.
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary.teal} />
@@ -51,6 +51,7 @@ export default function App() {
   }
 
   if (loadError) {
+    // Give the user a simple retry path if local app data cannot be read.
     return (
       <View style={styles.errorContainer}>
         <Text style={styles.errorTitle}>We hit a snag</Text>
@@ -64,6 +65,7 @@ export default function App() {
 
   return (
     <>
+      {/* The navigator owns all screens after startup chooses the first route. */}
       <StatusBar barStyle="dark-content" backgroundColor={colors.background.base} />
       <AppNavigator initialRouteName={initialRoute} />
     </>

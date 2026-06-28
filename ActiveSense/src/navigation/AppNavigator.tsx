@@ -15,6 +15,7 @@ type Props = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+// This stack controls top-level app flow: auth, onboarding, tabs, and workout sessions.
 export default function AppNavigator({ initialRouteName }: Props) {
   return (
     <NavigationContainer>
@@ -22,11 +23,14 @@ export default function AppNavigator({ initialRouteName }: Props) {
         initialRouteName={initialRouteName}
         screenOptions={{ headerShown: false }}
       >
+        {/* Auth and setup screens are shown before the user reaches the main app. */}
         <Stack.Screen name="AuthLanding" component={AuthLandingScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         <Stack.Screen name="InfoPage" component={InfoPageScreen} />
+        {/* MainTabs contains the four everyday app sections. */}
         <Stack.Screen name="Main" component={MainTabs} />
+        {/* Workout sessions take over the whole screen for camera-first tracking. */}
         <Stack.Screen
           name="WorkoutSession"
           component={WorkoutSessionScreen}

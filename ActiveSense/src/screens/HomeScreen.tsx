@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,10 +14,12 @@ import { Feather } from '@expo/vector-icons';
 import { CompositeNavigationProp, useIsFocused, useNavigation } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { WebView } from 'react-native-webview';
 import { colors } from '../theme/colors';
+import AvatarShowcaseView from '../components/AvatarShowcaseView';
+import IconBadge from '../components/IconBadge';
 import { db } from '../services/database';
 import { defaultStats, getStats, getUserProfile, getWeeklyActivity } from '../services/storage';
+import { defaultAvatarConfig, normalizeAvatarConfig } from '../data/avatars';
 import { MainTabParamList, RootStackParamList } from '../navigation/types';
 import { UserProfile, UserStats, WeeklyActivity, Workout } from '../types';
 
@@ -26,41 +28,24 @@ type NavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<RootStackParamList>
 >;
 
+// HomeScreen summarizes the user's progress and recommends one workout.
 export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const isFocused = useIsFocused();
+  // These state values are refreshed whenever the tab becomes focused.
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats>(defaultStats);
   const [weeklyData, setWeeklyData] = useState<WeeklyActivity[]>([]);
   const [highlightWorkout, setHighlightWorkout] = useState<Workout | null>(null);
-  const [loading, setLoading] = useState(true); 
-  const webViewRef = useRef<WebView>(null);
-  const webViewUrl = 'http://activesense.dpdns.org:5173'; 
-
-  const syncStateToWebView = (p: UserProfile | null, s: UserStats) => {
-    if (webViewRef.current) {
-      webViewRef.current.postMessage(
-        JSON.stringify({
-          type: 'HYDRATE_STATE',
-          payload: { 
-              profile: p, 
-              stats: s,
-              viewOnly: true
-          }
-        })
-      );
-    }
-  };
-
-  useEffect(() => {
-    if (!loading) {
-      syncStateToWebView(profile, stats);
-    }
-  }, [profile, stats, loading]);
-
+  const [goalLabel, setGoalLabel] = useState('--');
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const avatar = normalizeAvatarConfig(profile?.avatar ?? defaultAvatarConfig);
 
   useEffect(() => {
     let mounted = true;
+    // Load profile, progress, chart data, and the recommended workout in one pass.
     const loadData = async () => {
       try {
         const [storedProfile, storedStats, activity] = await Promise.all([
@@ -68,44 +53,42 @@ export default function HomeScreen() {
           getStats(),
           getWeeklyActivity(),
         ]);
-        const recommendedWorkout = await db.getRecommendedWorkout(storedProfile);
+        const [recommendedWorkout, dashboardSettings] = await Promise.all([
+          db.getRecommendedWorkout(storedProfile),
+          db.getDashboardSettings(),
+        ]);
         if (mounted) {
+          setLoadError(false);
           setProfile(storedProfile);
           setStats(storedStats);
           setWeeklyData(activity);
           setHighlightWorkout(recommendedWorkout);
+          setGoalLabel(dashboardSettings.goalLabel);
           setLoading(false);
         }
       } catch (error) {
         if (mounted) {
+          setLoadError(true);
           setLoading(false);
         }
-        Alert.alert('Unable to load data', 'Please restart the app to try again.');
+        Alert.alert('Unable to load data', 'Please try again from the Home screen.');
       }
     };
 
     if (isFocused) {
+      // Refetch after returning from a workout so Healthpoints and streaks update.
       setLoading(true);
+      setLoadError(false);
       loadData();
     }
 
     return () => {
       mounted = false;
     };
-  }, [isFocused]);
+  }, [isFocused, reloadKey]);
 
-  const onWebViewMessage = (event: any) => {
-    try {
-      const message = JSON.parse(event.nativeEvent.data);
-      if (message.type === 'WEB_READY') {
-        syncStateToWebView(profile, stats);
-      }
-    } catch (err) {
-      console.error("Message parse error:", err);
-    }
-  };
-
-  if (loading || !highlightWorkout) {
+  if (loading) {
+    // Keep the tab usable while local storage and catalog data load.
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loader}>
@@ -115,29 +98,49 @@ export default function HomeScreen() {
     );
   }
 
+  if (loadError || !highlightWorkout) {
+    // A failed read should leave the user with a clear action instead of a stuck tab.
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.emptyState}>
+          <Feather name="refresh-cw" size={28} color={colors.primary.teal} />
+          <Text style={styles.emptyTitle}>Home data unavailable</Text>
+          <Text style={styles.emptyCopy}>Check Supabase setup or try again with the local fallback catalog.</Text>
+          <TouchableOpacity
+            style={styles.emptyButton}
+            onPress={() => {
+              setLoading(true);
+              setLoadError(false);
+              setHighlightWorkout(null);
+              setReloadKey((current) => current + 1);
+            }}
+          >
+            <Text style={styles.emptyButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* The header gives the user a quick motivational snapshot. */}
         <LinearGradient colors={colors.gradient.primary} style={styles.header}>
-          <Text style={styles.greeting}>Hi {profile?.name ?? 'there'} 👋</Text>
-          <Text style={styles.subGreeting}>Keep your streak alive with a quick session today.</Text>
-          
-          <View style={styles.modelContainer}>
-              <WebView
-                ref={webViewRef}
-                source={{ uri: webViewUrl }} 
-                onMessage={onWebViewMessage}
-                style={styles.webview}
-                originWhitelist={['*']}
-                onLoadEnd={() => syncStateToWebView(profile, stats)}
-                bounces={false}
-                scrollEnabled={false}
-                overScrollMode="never"
-                androidLayerType="hardware" 
-                containerStyle={{ backgroundColor: 'transparent' }} 
-              />
+          <View style={styles.headerTopRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.greeting}>Hi {profile?.name ?? 'ActiveSense'} 👋</Text>
+              <Text style={styles.subGreeting}>Keep your streak alive with a quick session today.</Text>
             </View>
-
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={styles.settingsButton}
+              onPress={() => navigation.navigate('Profile')}
+            >
+              <Feather name="settings" size={22} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <AvatarShowcaseView profile={profile} stats={stats} avatarConfig={avatar} />
           <View style={styles.streakCard}>
             <View>
               <Text style={styles.streakLabel}>Current streak</Text>
@@ -150,6 +153,7 @@ export default function HomeScreen() {
           </View>
         </LinearGradient>
 
+        {/* Top-level stats are intentionally compact for fast scanning. */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Healthpoints</Text>
@@ -161,10 +165,11 @@ export default function HomeScreen() {
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Goal</Text>
-            <Text style={styles.statValue}>30 min</Text>
+            <Text style={styles.statValue}>{goalLabel}</Text>
           </View>
         </View>
 
+        {/* Recommended workout is selected from profile preferences in the db facade. */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recommended for you</Text>
           <TouchableOpacity onPress={() => navigation.navigate('Workouts')}>
@@ -173,11 +178,8 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.recommendCard}>
-          <LinearGradient 
-            colors={highlightWorkout.gradient as [string, string, ...string[]]} 
-            style={styles.recommendHeader}
-          >
-            <Text style={styles.recommendEmoji}>{highlightWorkout.emoji}</Text>
+          <LinearGradient colors={highlightWorkout.gradient} style={styles.recommendHeader}>
+            <IconBadge icon={highlightWorkout.emoji} size={42} />
             <View style={styles.recommendBadge}>
               <Text style={styles.recommendBadgeText}>{highlightWorkout.category}</Text>
             </View>
@@ -204,6 +206,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Quick actions jump to the app's most common flows. */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Quick actions</Text>
         </View>
@@ -231,6 +234,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Weekly activity turns saved workout sessions into a simple bar chart. */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Weekly activity</Text>
           <View style={styles.weeklyBadge}>
@@ -263,12 +267,32 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background.base },
   scrollContent: { paddingBottom: 32 },
   loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  emptyTitle: { marginTop: 12, fontSize: 18, fontWeight: '800', color: colors.text.primary },
+  emptyCopy: { marginTop: 8, fontSize: 13, textAlign: 'center', color: colors.text.secondary, lineHeight: 18 },
+  emptyButton: {
+    marginTop: 18,
+    borderRadius: 9999,
+    backgroundColor: colors.primary.teal,
+    paddingHorizontal: 22,
+    paddingVertical: 11,
+  },
+  emptyButtonText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   header: {
     padding: 24,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
   },
   greeting: { fontSize: 24, fontWeight: '700', color: '#fff' },
+  headerTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  settingsButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.22)',
+  },
   subGreeting: { fontSize: 12, color: 'rgba(255,255,255,0.9)', marginTop: 6 },
   streakCard: {
     marginTop: 20,
@@ -327,7 +351,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
-  recommendEmoji: { fontSize: 48 },
   recommendBadge: {
     backgroundColor: 'rgba(255,255,255,0.3)',
     paddingHorizontal: 12,
@@ -396,16 +419,4 @@ const styles = StyleSheet.create({
   },
   weeklyBarFill: { width: '100%', borderRadius: 9999 },
   weeklyLabel: { fontSize: 10, color: colors.text.secondary, marginTop: 8 },
-
-  modelContainer: {
-    width: '100%',
-    height: 400, 
-    marginTop: 16,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  webview: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
 });

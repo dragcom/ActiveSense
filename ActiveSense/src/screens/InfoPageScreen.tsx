@@ -1,3 +1,4 @@
+import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,22 +9,27 @@ import { colors } from '../theme/colors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'InfoPage'>;
 
+// InfoPageScreen displays short reusable explanations from Profile and related links.
 export default function InfoPageScreen({ navigation, route }: Props) {
+  // The caller chooses the icon, but "info" is a safe default.
   const icon = (route.params.icon ?? 'info') as keyof typeof Feather.glyphMap;
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Back returns to whichever screen opened this information page. */}
         <TouchableOpacity accessibilityRole="button" style={styles.backButton} onPress={() => navigation.goBack()}>
           <Feather name="chevron-left" size={18} color={colors.primary.teal} />
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
 
+        {/* Hero highlights the topic title and matching Feather icon. */}
         <LinearGradient colors={colors.gradient.primary} style={styles.hero}>
           <Feather name={icon} size={34} color="#fff" />
           <Text style={styles.title}>{route.params.title}</Text>
         </LinearGradient>
 
+        {/* Body copy is supplied through route params so this screen stays reusable. */}
         <View style={styles.card}>
           <Text style={styles.body}>{route.params.body}</Text>
         </View>

@@ -2,22 +2,33 @@
   "expo": {
     "name": "ActiveSense",
     "slug": "ActiveSense",
+    "scheme": "activesense",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "ActiveSense uses the camera to show your workout preview and process pose landmarks locally.",
+        "NSPhotoLibraryAddUsageDescription": "ActiveSense can save avatar booth snapshots to your photo library when you choose to export them."
+      },
       "bundleIdentifier": "com.anonymous.ActiveSense"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#077362",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
       "package": "com.anonymous.ActiveSense"
     },
     "web": {
@@ -25,23 +36,20 @@
     },
     "plugins": [
       "expo-font",
-      "expo-sharing",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "compileSdkVersion": 36,
-            "targetSdkVersion": 36,
-            "buildToolsVersion": "35.0.0"
-          }
-        }
-      ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow this app to access your camera to track workout poses."
+          "cameraPermission": "ActiveSense uses the camera to show your workout preview and process pose landmarks locally."
         }
-      ]
-    ]
+      ],
+      "expo-asset",
+      "expo-media-library",
+      "expo-sharing"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "67c82d52-c9d1-406e-b898-e7fb5277d5f7"
+      }
+    }
   }
 }

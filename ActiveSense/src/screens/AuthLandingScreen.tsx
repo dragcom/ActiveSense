@@ -1,3 +1,4 @@
+import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,13 +9,15 @@ import { colors } from '../theme/colors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AuthLanding'>;
 
+// AuthLandingScreen is the first welcome screen for new or logged-out users.
 export default function AuthLandingScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* The hero explains the app promise before asking the user to sign up or log in. */}
         <LinearGradient colors={colors.gradient.primary} style={styles.hero}>
           <View style={styles.logoCircle}>
-            <Text style={styles.logoEmoji}>🏃</Text>
+            <Feather name="activity" size={42} color="#fff" />
           </View>
           <Text style={styles.brand}>
             Active<Text style={styles.brandAccent}>Sense</Text>
@@ -28,6 +31,7 @@ export default function AuthLandingScreen({ navigation }: Props) {
           </View>
         </LinearGradient>
 
+        {/* The action panel sends users into account signup or password login. */}
         <View style={styles.actionPanel}>
           <Text style={styles.panelTitle}>Welcome</Text>
           <Text style={styles.panelCopy}>
@@ -51,10 +55,11 @@ export default function AuthLandingScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('Login')}
           >
             <Feather name="log-in" size={18} color={colors.primary.teal} />
-            <Text style={styles.secondaryText}>Login</Text>
+            <Text style={styles.secondaryText}>Log in</Text>
           </TouchableOpacity>
         </View>
 
+        {/* Feature cards give a quick preview of the core app benefits. */}
         <View style={styles.featureRow}>
           <View style={styles.featureCard}>
             <Feather name="activity" size={18} color={colors.primary.teal} />
@@ -89,7 +94,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
   },
-  logoEmoji: { fontSize: 44 },
   brand: { fontSize: 34, fontWeight: '700', color: '#fff' },
   brandAccent: { color: '#E0F2FE' },
   subtitle: {

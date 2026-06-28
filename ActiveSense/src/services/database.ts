@@ -1,260 +1,226 @@
 import {
   Achievement,
-  MedicalConditionOption,
   OnboardingChoices,
   ProfileMenuItem,
+  PoseTrainingSample,
   RewardVoucher,
   UserProfile,
   UserStats,
-  WeeklyActivity,
   Workout,
   WorkoutExercise,
 } from '../types';
+import {
+  fallbackAchievements,
+  fallbackDashboardSettings,
+  fallbackDefaultWorkoutId,
+  fallbackInfoPages,
+  fallbackOnboardingChoices,
+  fallbackPoseTrainingSamples,
+  fallbackProfileGoals,
+  fallbackProfileMenuItems,
+  fallbackRewardVouchers,
+  fallbackWorkoutCategories,
+  fallbackWorkoutExercises,
+  fallbackWorkouts,
+} from './fallbackData';
+import { hasSupabaseConfig, requireSupabase } from './supabase';
 
+// These row types mirror Supabase column names before mapping them for React Native screens.
 type WorkoutCategoryRow = {
   id: number;
   name: string;
-  sortOrder: number;
+  sort_order: number;
 };
 
+// WorkoutRow is the exact database shape returned by the workouts table.
 type WorkoutRow = {
   id: number;
   title: string;
-  durationMinutes: number;
+  duration_minutes: number;
   difficulty: string;
   calories: number;
-  categoryId: number;
+  category_id: number;
   emoji: string;
-  gradientStart: string;
-  gradientEnd: string;
+  gradient_start: string;
+  gradient_end: string;
   description: string;
   intensity: string;
-  recommendedMinAge?: number;
-  recommendedMaxAge?: number;
+  recommended_min_age?: number | null;
+  recommended_max_age?: number | null;
+  workout_categories?: { name: string } | null;
 };
 
+// WorkoutExerciseRow keeps SQL snake_case separate from the app's camelCase type.
+type WorkoutExerciseRow = {
+  id: number;
+  workout_id: number;
+  name: string;
+  sets: number;
+  reps: number;
+  points: number;
+  sort_order: number;
+  target_landmarks: number;
+  pose_class: WorkoutExercise['poseClass'];
+  feedback_prompt: string;
+};
+
+// The seed table stores onboarding choices as field_name/label pairs.
 type OnboardingChoiceRow = {
-  fieldName: 'fitness_level' | 'preferred_intensity';
+  field_name: 'fitness_level' | 'preferred_intensity';
   label: string;
-  sortOrder: number;
+  sort_order: number;
 };
 
-type MedicalConditionOptionRow = MedicalConditionOption & {
-  sortOrder: number;
+// Supabase stores achievements with SQL-friendly column names.
+type AchievementRow = {
+  id: number;
+  title: string;
+  emoji: string;
+  description: string;
+  requirement_type: string;
+  requirement_value: number;
+  sort_order: number;
 };
 
-const workoutCategoryRows: WorkoutCategoryRow[] = [
-  { id: 1, name: 'Beginner', sortOrder: 10 },
-  { id: 2, name: 'Senior', sortOrder: 20 },
-  { id: 3, name: 'Cardio', sortOrder: 30 },
-  { id: 4, name: 'Strength', sortOrder: 40 },
-  { id: 5, name: 'Flexibility', sortOrder: 50 },
+// RewardVoucherRow is the shop row before it is mapped to UI field names.
+type RewardVoucherRow = {
+  id: number;
+  name: string;
+  points: number;
+  emoji: string;
+  category: string;
+};
+
+// Profile menu rows drive the Settings-style list on the Profile screen.
+type ProfileMenuRow = {
+  id: number;
+  icon: string;
+  label: string;
+  badge?: string | null;
+  action_key?: ProfileMenuItem['actionKey'] | null;
+  color: string;
+  sort_order: number;
+};
+
+// Pose samples are read from Supabase so classifier training data is no longer hardcoded.
+type PoseTrainingSampleRow = {
+  id: number;
+  label: PoseTrainingSample['label'];
+  features: number[];
+};
+
+// Info pages are loaded from Supabase so Profile copy stays editable in data.
+type InfoPageRow = {
+  action_key: string;
+  title: string;
+  icon: string;
+  body: string;
+};
+
+const validPoseLabels: PoseTrainingSample['label'][] = [
+  'standing',
+  'seated',
+  'squat',
+  'pushup',
+  'situp',
+  'arm-raise',
+  'side-leg-lift',
+  'stretch',
 ];
 
-const workoutRows: WorkoutRow[] = [
-  {
-    id: 1,
-    title: 'Gentle Morning Yoga',
-    durationMinutes: 15,
-    difficulty: 'Beginner',
-    calories: 50,
-    categoryId: 5,
-    emoji: '🧘',
-    gradientStart: '#A78BFA',
-    gradientEnd: '#EC4899',
-    description: 'Start your day with gentle stretches and mindful breathing.',
-    intensity: 'Low',
-  },
-  {
-    id: 2,
-    title: 'Senior Seated Exercises',
-    durationMinutes: 20,
-    difficulty: 'Low Impact',
-    calories: 60,
-    categoryId: 2,
-    emoji: '🪑',
-    gradientStart: '#14B8A6',
-    gradientEnd: '#06B6D4',
-    description: 'Safe, effective chair-based movements for mobility.',
-    intensity: 'Low',
-    recommendedMinAge: 55,
-  },
-  {
-    id: 3,
-    title: 'Cardio Walk Burst',
-    durationMinutes: 18,
-    difficulty: 'Moderate',
-    calories: 120,
-    categoryId: 3,
-    emoji: '🚶',
-    gradientStart: '#2DD4BF',
-    gradientEnd: '#22D3EE',
-    description: 'Light cardio intervals to boost endurance and mood.',
-    intensity: 'Medium',
-  },
-  {
-    id: 4,
-    title: 'Core Stability Basics',
-    durationMinutes: 16,
-    difficulty: 'Beginner',
-    calories: 90,
-    categoryId: 4,
-    emoji: '🧠',
-    gradientStart: '#FB923C',
-    gradientEnd: '#F43F5E',
-    description: 'Build a strong core with low-impact strength work.',
-    intensity: 'Low',
-  },
-  {
-    id: 5,
-    title: 'Balance & Mobility',
-    durationMinutes: 12,
-    difficulty: 'Low Impact',
-    calories: 45,
-    categoryId: 2,
-    emoji: '⚖️',
-    gradientStart: '#60A5FA',
-    gradientEnd: '#38BDF8',
-    description: 'Improve balance with steady, confidence-building drills.',
-    intensity: 'Low',
-    recommendedMinAge: 55,
-  },
-  {
-    id: 6,
-    title: 'Low Impact HIIT',
-    durationMinutes: 14,
-    difficulty: 'Intermediate',
-    calories: 140,
-    categoryId: 3,
-    emoji: '⚡',
-    gradientStart: '#F97316',
-    gradientEnd: '#EF4444',
-    description: 'Short bursts of energy without the joint strain.',
-    intensity: 'High',
-    recommendedMaxAge: 55,
-  },
-  {
-    id: 7,
-    title: 'Resistance Band Flow',
-    durationMinutes: 22,
-    difficulty: 'Intermediate',
-    calories: 160,
-    categoryId: 4,
-    emoji: '🎯',
-    gradientStart: '#34D399',
-    gradientEnd: '#10B981',
-    description: 'Strengthen major muscle groups with gentle resistance.',
-    intensity: 'Medium',
-  },
-  {
-    id: 8,
-    title: 'Evening Stretch Reset',
-    durationMinutes: 10,
-    difficulty: 'Beginner',
-    calories: 35,
-    categoryId: 5,
-    emoji: '🌙',
-    gradientStart: '#A78BFA',
-    gradientEnd: '#818CF8',
-    description: 'Wind down with soothing stretches and breath work.',
-    intensity: 'Low',
-  },
-];
+// The pose classifier currently extracts ten numeric features from each 33-point frame.
+const expectedPoseFeatureCount = 10;
 
-const workoutExerciseRows: WorkoutExercise[] = [
-  { id: 1, workoutId: 1, name: 'Breathing Reset', sets: 1, reps: 5, points: 20, sortOrder: 10, targetLandmarks: 33, feedbackPrompt: 'Relax your shoulders and keep breathing steadily.' },
-  { id: 2, workoutId: 1, name: 'Standing Forward Fold', sets: 2, reps: 6, points: 35, sortOrder: 20, targetLandmarks: 33, feedbackPrompt: 'Hinge gently and keep your knees soft.' },
-  { id: 3, workoutId: 1, name: 'Seated Twist', sets: 2, reps: 8, points: 35, sortOrder: 30, targetLandmarks: 33, feedbackPrompt: 'Rotate slowly and keep your spine tall.' },
-  { id: 4, workoutId: 2, name: 'Seated Marches', sets: 3, reps: 10, points: 45, sortOrder: 10, targetLandmarks: 33, feedbackPrompt: 'Lift one knee at a time and sit tall.' },
-  { id: 5, workoutId: 2, name: 'Chair Arm Raises', sets: 2, reps: 12, points: 35, sortOrder: 20, targetLandmarks: 33, feedbackPrompt: 'Keep your shoulders relaxed as your arms rise.' },
-  { id: 6, workoutId: 2, name: 'Ankle Circles', sets: 2, reps: 10, points: 20, sortOrder: 30, targetLandmarks: 33, feedbackPrompt: 'Move smoothly and avoid locking your knees.' },
-  { id: 7, workoutId: 3, name: 'Walk In Place', sets: 3, reps: 20, points: 50, sortOrder: 10, targetLandmarks: 33, feedbackPrompt: 'Land softly and keep your chest open.' },
-  { id: 8, workoutId: 3, name: 'Side Steps', sets: 3, reps: 12, points: 45, sortOrder: 20, targetLandmarks: 33, feedbackPrompt: 'Step wide enough to feel balanced.' },
-  { id: 9, workoutId: 3, name: 'Heel Digs', sets: 2, reps: 16, points: 35, sortOrder: 30, targetLandmarks: 33, feedbackPrompt: 'Point your toes upward and move with control.' },
-  { id: 10, workoutId: 4, name: 'Squats', sets: 3, reps: 10, points: 50, sortOrder: 10, targetLandmarks: 33, feedbackPrompt: 'Keep knees aligned with toes.' },
-  { id: 11, workoutId: 4, name: 'Wall Push-ups', sets: 3, reps: 8, points: 40, sortOrder: 20, targetLandmarks: 33, feedbackPrompt: 'Keep your body long from shoulders to heels.' },
-  { id: 12, workoutId: 4, name: 'Arm Circles', sets: 2, reps: 15, points: 30, sortOrder: 30, targetLandmarks: 33, feedbackPrompt: 'Small controlled circles, shoulders down.' },
-  { id: 13, workoutId: 4, name: 'Leg Raises', sets: 3, reps: 10, points: 50, sortOrder: 40, targetLandmarks: 33, feedbackPrompt: 'Brace your core before lifting.' },
-  { id: 14, workoutId: 4, name: 'Cool Down Stretch', sets: 1, reps: 1, points: 30, sortOrder: 50, targetLandmarks: 33, feedbackPrompt: 'Slow your breathing and ease into the stretch.' },
-  { id: 15, workoutId: 5, name: 'Tandem Stand', sets: 3, reps: 8, points: 35, sortOrder: 10, targetLandmarks: 33, feedbackPrompt: 'Use a wall or chair nearby for confidence.' },
-  { id: 16, workoutId: 5, name: 'Side Leg Lifts', sets: 2, reps: 10, points: 35, sortOrder: 20, targetLandmarks: 33, feedbackPrompt: 'Lift only as high as you can stay stable.' },
-  { id: 17, workoutId: 5, name: 'Heel-to-Toe Walk', sets: 2, reps: 12, points: 30, sortOrder: 30, targetLandmarks: 33, feedbackPrompt: 'Move slowly and keep your gaze forward.' },
-  { id: 18, workoutId: 6, name: 'Low Jacks', sets: 3, reps: 12, points: 50, sortOrder: 10, targetLandmarks: 33, feedbackPrompt: 'Step out instead of jumping.' },
-  { id: 19, workoutId: 6, name: 'Fast Marches', sets: 3, reps: 18, points: 55, sortOrder: 20, targetLandmarks: 33, feedbackPrompt: 'Drive your arms and stay light on your feet.' },
-  { id: 20, workoutId: 6, name: 'Squat Reach', sets: 2, reps: 10, points: 35, sortOrder: 30, targetLandmarks: 33, feedbackPrompt: 'Reach tall after each controlled squat.' },
-  { id: 21, workoutId: 7, name: 'Band Rows', sets: 3, reps: 12, points: 55, sortOrder: 10, targetLandmarks: 33, feedbackPrompt: 'Pull elbows back without shrugging.' },
-  { id: 22, workoutId: 7, name: 'Band Press', sets: 3, reps: 10, points: 50, sortOrder: 20, targetLandmarks: 33, feedbackPrompt: 'Press forward with steady wrists.' },
-  { id: 23, workoutId: 7, name: 'Band Good Morning', sets: 2, reps: 10, points: 45, sortOrder: 30, targetLandmarks: 33, feedbackPrompt: 'Hinge at the hips and keep your back neutral.' },
-  { id: 24, workoutId: 8, name: 'Neck Release', sets: 1, reps: 6, points: 15, sortOrder: 10, targetLandmarks: 33, feedbackPrompt: 'Move slowly and avoid forcing range.' },
-  { id: 25, workoutId: 8, name: 'Hamstring Stretch', sets: 2, reps: 6, points: 20, sortOrder: 20, targetLandmarks: 33, feedbackPrompt: 'Keep the stretch gentle and even.' },
-  { id: 26, workoutId: 8, name: 'Child Pose Breathing', sets: 1, reps: 5, points: 20, sortOrder: 30, targetLandmarks: 33, feedbackPrompt: 'Let each breath soften your back.' },
-];
+// Catalog screens should not crash if a bad color lands in Supabase.
+const safeColor = (value: string | null | undefined, fallback: string) =>
+  /^#[0-9A-Fa-f]{6}$/.test(value ?? '') ? (value as string) : fallback;
 
-const voucherRows: RewardVoucher[] = [
-  { id: 1, name: 'FairPrice $5 Voucher', points: 500, emoji: '🛒', category: 'Groceries' },
-  { id: 2, name: 'GrabFood $10 Voucher', points: 1000, emoji: '🍔', category: 'Food' },
-  { id: 3, name: 'Guardian $5 Voucher', points: 500, emoji: '💊', category: 'Health' },
-  { id: 4, name: 'Decathlon $15 Voucher', points: 1500, emoji: '⚽', category: 'Sports' },
-];
+// Database requirement names are snake_case, while the app state is camelCase.
+const statKeyFromDatabase = (value: string): keyof UserStats => {
+  if (value === 'healthpoints') {
+    return 'healthpoints';
+  }
+  if (value === 'streak_days') {
+    return 'streakDays';
+  }
+  if (value === 'total_workouts') {
+    return 'totalWorkouts';
+  }
+  return 'totalWorkouts';
+};
 
-const achievementRows: Achievement[] = [
-  { id: 1, title: '7-Day Streak', emoji: '🔥', desc: 'Complete 7 days in a row', requirementType: 'streakDays', requirementValue: 7 },
-  { id: 2, title: 'First Workout', emoji: '🎯', desc: 'Finish your first session', requirementType: 'totalWorkouts', requirementValue: 1 },
-  { id: 3, title: '1000 Points', emoji: '💯', desc: 'Earn 1000 Healthpoints', requirementType: 'healthpoints', requirementValue: 1000 },
-  { id: 4, title: '30-Day Streak', emoji: '🏆', desc: 'Complete 30 consecutive days', requirementType: 'streakDays', requirementValue: 30 },
-];
+// Missing Supabase tables should not make the iOS app impossible to inspect.
+const readOrFallback = async <T>(label: string, fallback: T, read: () => Promise<T>) => {
+  if (!hasSupabaseConfig) {
+    return fallback;
+  }
+  try {
+    return await read();
+  } catch (error) {
+    console.warn(`Using local fallback for ${label}.`, error);
+    return fallback;
+  }
+};
 
-const onboardingChoiceRows: OnboardingChoiceRow[] = [
-  { fieldName: 'fitness_level', label: 'Beginner', sortOrder: 10 },
-  { fieldName: 'fitness_level', label: 'Intermediate', sortOrder: 20 },
-  { fieldName: 'fitness_level', label: 'Advanced', sortOrder: 30 },
-  { fieldName: 'fitness_level', label: 'Low Impact', sortOrder: 40 },
-  { fieldName: 'preferred_intensity', label: 'Low', sortOrder: 10 },
-  { fieldName: 'preferred_intensity', label: 'Medium', sortOrder: 20 },
-  { fieldName: 'preferred_intensity', label: 'High', sortOrder: 30 },
-];
-
-const medicalConditionRows: MedicalConditionOptionRow[] = [
-  { id: 1, category: 'General', label: 'None', sortOrder: 10 },
-  { id: 2, category: 'Mobility & Joint', label: 'Knee pain', sortOrder: 20 },
-  { id: 3, category: 'Mobility & Joint', label: 'Back pain', sortOrder: 30 },
-  { id: 4, category: 'Mobility & Joint', label: 'Arthritis', sortOrder: 40 },
-  { id: 5, category: 'Mobility & Joint', label: 'Balance concerns', sortOrder: 50 },
-  { id: 6, category: 'Cardiovascular & Metabolic', label: 'Hypertension', sortOrder: 60 },
-  { id: 7, category: 'Cardiovascular & Metabolic', label: 'Diabetes', sortOrder: 70 },
-  { id: 8, category: 'Respiratory', label: 'Asthma', sortOrder: 80 },
-  { id: 9, category: 'Respiratory', label: 'Breathing difficulty', sortOrder: 90 },
-  { id: 10, category: 'Other', label: 'Recent injury', sortOrder: 100 },
-];
-
-const profileGoalRows = ['Stay Active', 'Build Strength', 'Improve Flexibility'];
-
-const profileMenuRows: ProfileMenuItem[] = [
-  { id: 1, icon: 'settings', label: 'Account Settings', color: '#14B8A6', actionKey: 'settings' },
-  { id: 2, icon: 'bell', label: 'Notifications', color: '#14B8A6', actionKey: 'notifications' },
-  { id: 3, icon: 'help-circle', label: 'Help & Support', color: '#14B8A6', actionKey: 'support' },
-  { id: 4, icon: 'shield', label: 'Privacy Settings', color: '#14B8A6', actionKey: 'privacy' },
-  { id: 5, icon: 'log-out', label: 'Log Out', color: '#EF4444', actionKey: 'logout' },
-];
-
-const categoryById = new Map(workoutCategoryRows.map((category) => [category.id, category]));
-
+// Convert database rows into the card-friendly Workout type used by screens.
 const toWorkout = (row: WorkoutRow): Workout => ({
   id: row.id,
   title: row.title,
-  duration: `${row.durationMinutes} min`,
+  duration: `${row.duration_minutes} min`,
   difficulty: row.difficulty,
   calories: `${row.calories} cal`,
-  category: categoryById.get(row.categoryId)?.name ?? 'Beginner',
+  category: row.workout_categories?.name ?? 'Uncategorized',
   emoji: row.emoji,
-  gradient: [row.gradientStart, row.gradientEnd],
+  gradient: [safeColor(row.gradient_start, '#14B8A6'), safeColor(row.gradient_end, '#06B6D4')],
   description: row.description,
   intensity: row.intensity,
 });
 
-const sortByOrder = <T extends { sortOrder?: number }>(items: T[]) =>
-  [...items].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+// Convert exercise rows into the shape consumed by WorkoutSessionScreen.
+const toWorkoutExercise = (row: WorkoutExerciseRow): WorkoutExercise => ({
+  id: row.id,
+  workoutId: row.workout_id,
+  name: row.name,
+  sets: row.sets,
+  reps: row.reps,
+  points: row.points,
+  sortOrder: row.sort_order,
+  targetLandmarks: row.target_landmarks,
+  poseClass: row.pose_class,
+  feedbackPrompt: row.feedback_prompt,
+});
 
+// Convert achievement rows and compute unlocked state from current stats.
+const toAchievement = (row: AchievementRow, stats: UserStats): Achievement & { unlocked: boolean } => ({
+  id: row.id,
+  title: row.title,
+  emoji: row.emoji,
+  desc: row.description,
+  requirementType: statKeyFromDatabase(row.requirement_type),
+  requirementValue: row.requirement_value,
+  unlocked: stats[statKeyFromDatabase(row.requirement_type)] >= row.requirement_value,
+});
+
+// Add unlocked state to fallback achievement rows too.
+const fallbackAchievementsForStats = (stats: UserStats) =>
+  fallbackAchievements.map((achievement) => ({
+    ...achievement,
+    unlocked: stats[achievement.requirementType] >= achievement.requirementValue,
+  }));
+
+// Recommended workout fallback uses the same profile ranking idea as Supabase rows.
+const fallbackRecommendedWorkout = (profile: UserProfile | null) => {
+  const [first] = [...fallbackWorkouts].sort((a, b) => {
+    const score = (workout: Workout) =>
+      (profile?.fitnessLevel === workout.difficulty ? 4 : 0) +
+      (profile?.preferredIntensity === workout.intensity ? 3 : 0) +
+      (profile && profile.age >= 55 && workout.category === 'Senior' ? 5 : 0);
+    return score(b) - score(a);
+  });
+  return first ?? fallbackWorkouts[0];
+};
+
+// Score workouts against the user's profile so Home can pick a recommendation from database rows.
 const rankWorkoutForProfile = (profile: UserProfile | null) => (row: WorkoutRow) => {
   let score = 0;
   if (!profile) {
@@ -266,61 +232,265 @@ const rankWorkoutForProfile = (profile: UserProfile | null) => (row: WorkoutRow)
   if (row.intensity === profile.preferredIntensity) {
     score += 3;
   }
-  if (profile.age >= 55 && row.recommendedMinAge) {
+  if (profile.age >= 55 && row.recommended_min_age) {
     score += 5;
   }
-  if (profile.age < 55 && row.recommendedMaxAge) {
+  if (profile.age < 55 && row.recommended_max_age) {
     score += 2;
   }
   return score;
 };
 
+// Throw a helpful error when Supabase returns a failed response.
+const assertNoError = (error: unknown) => {
+  if (error) {
+    throw error;
+  }
+};
+
+// db is the app's database facade; screens call this instead of talking to Supabase directly.
 export const db = {
+  // Return filter chips for the Workouts screen from the categories table.
   async getWorkoutCategories() {
-    return ['All', ...sortByOrder(workoutCategoryRows).map((category) => category.name)];
+    return readOrFallback('workout categories', fallbackWorkoutCategories, async () => {
+      const { data, error } = await requireSupabase()
+        .from('workout_categories')
+        .select('id, name, sort_order')
+        .order('sort_order', { ascending: true });
+      assertNoError(error);
+      const categories = ((data as WorkoutCategoryRow[] | null) ?? []).map((category) => category.name);
+      return ['All', ...categories];
+    });
   },
 
+  // Return all active workout cards from Supabase.
   async getWorkouts() {
-    return workoutRows.map(toWorkout);
+    return readOrFallback('workouts', fallbackWorkouts, async () => {
+      const { data, error } = await requireSupabase()
+        .from('workouts')
+        .select('id, title, duration_minutes, difficulty, calories, category_id, emoji, gradient_start, gradient_end, description, intensity, recommended_min_age, recommended_max_age, workout_categories(name)')
+        .order('id', { ascending: true });
+      assertNoError(error);
+      const workouts = ((data as WorkoutRow[] | null) ?? []).map(toWorkout);
+      return workouts.length ? workouts : fallbackWorkouts;
+    });
   },
 
+  // Pick the best workout for the user's age, level, and intensity preference.
   async getRecommendedWorkout(profile: UserProfile | null) {
-    const [first] = [...workoutRows].sort(
-      (a, b) => rankWorkoutForProfile(profile)(b) - rankWorkoutForProfile(profile)(a),
-    );
-    return toWorkout(first);
+    return readOrFallback('recommended workout', fallbackRecommendedWorkout(profile), async () => {
+      const { data, error } = await requireSupabase()
+        .from('workouts')
+        .select('id, title, duration_minutes, difficulty, calories, category_id, emoji, gradient_start, gradient_end, description, intensity, recommended_min_age, recommended_max_age, workout_categories(name)')
+        .order('id', { ascending: true });
+      assertNoError(error);
+      const rows = (data as WorkoutRow[] | null) ?? [];
+      const [first] = [...rows].sort(
+        (a, b) => rankWorkoutForProfile(profile)(b) - rankWorkoutForProfile(profile)(a),
+      );
+      return first ? toWorkout(first) : fallbackRecommendedWorkout(profile);
+    });
   },
 
+  // Return exercises for one workout; quick workout mode uses app_settings.default_workout_id or the first workout.
   async getWorkoutExercises(workoutId?: number) {
-    const selectedWorkoutId = workoutId ?? 4;
-    const exercises = workoutExerciseRows.filter((exercise) => exercise.workoutId === selectedWorkoutId);
-    return sortByOrder(exercises.length ? exercises : workoutExerciseRows.filter((exercise) => exercise.workoutId === 4));
+    const fallbackWorkoutId = workoutId ?? fallbackDefaultWorkoutId;
+    const fallbackExercises = fallbackWorkoutExercises.filter((exercise) => exercise.workoutId === fallbackWorkoutId);
+    return readOrFallback('workout exercises', fallbackExercises, async () => {
+      const client = requireSupabase();
+      let selectedWorkoutId = workoutId;
+
+      if (!selectedWorkoutId) {
+        const { data: setting, error: settingError } = await client
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'default_workout_id')
+          .maybeSingle();
+        assertNoError(settingError);
+        selectedWorkoutId = Number((setting?.value as { workout_id?: number } | null)?.workout_id);
+      }
+
+      if (!selectedWorkoutId) {
+        const { data: firstWorkout, error: firstWorkoutError } = await client
+          .from('workouts')
+          .select('id')
+          .order('id', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        assertNoError(firstWorkoutError);
+        selectedWorkoutId = Number(firstWorkout?.id);
+      }
+
+      const { data, error } = await client
+        .from('workout_exercises')
+        .select('id, workout_id, name, sets, reps, points, sort_order, target_landmarks, pose_class, feedback_prompt')
+        .eq('workout_id', selectedWorkoutId)
+        .order('sort_order', { ascending: true });
+      assertNoError(error);
+      const exercises = ((data as WorkoutExerciseRow[] | null) ?? []).map(toWorkoutExercise);
+      return exercises.length ? exercises : fallbackExercises;
+    });
   },
 
+  // The workout session uses these database samples to classify live landmarks.
+  async getPoseTrainingSamples() {
+    return readOrFallback('pose training samples', fallbackPoseTrainingSamples, async () => {
+      const { data, error } = await requireSupabase()
+        .from('pose_training_samples')
+        .select('id, label, features')
+        .order('id', { ascending: true });
+      assertNoError(error);
+      const samples = ((data as PoseTrainingSampleRow[] | null) ?? [])
+        .filter((sample) =>
+          validPoseLabels.includes(sample.label) &&
+          Array.isArray(sample.features) &&
+          sample.features.length === expectedPoseFeatureCount &&
+          sample.features.every(Number.isFinite),
+        )
+        .map((sample) => ({
+          id: sample.id,
+          label: sample.label,
+          features: sample.features,
+        }));
+      return samples.length ? samples : fallbackPoseTrainingSamples;
+    });
+  },
+
+  // Progress screen reads active rows for the reward shop.
   async getRewardVouchers() {
-    return voucherRows;
+    return readOrFallback('reward vouchers', fallbackRewardVouchers, async () => {
+      const { data, error } = await requireSupabase()
+        .from('reward_vouchers')
+        .select('id, name, points, emoji, category')
+        .eq('is_active', true)
+        .order('points', { ascending: true });
+      assertNoError(error);
+      const vouchers = ((data as RewardVoucherRow[] | null) ?? []).map((voucher) => ({
+        id: voucher.id,
+        name: voucher.name,
+        points: voucher.points,
+        emoji: voucher.emoji,
+        category: voucher.category,
+      }));
+      return vouchers.length ? vouchers : fallbackRewardVouchers;
+    });
   },
 
+  // Add unlocked state to achievement definitions based on the user's stats.
   async getAchievements(stats: UserStats) {
-    return achievementRows.map((achievement) => ({
-      ...achievement,
-      unlocked: stats[achievement.requirementType] >= achievement.requirementValue,
-    }));
+    return readOrFallback('achievements', fallbackAchievementsForStats(stats), async () => {
+      const { data, error } = await requireSupabase()
+        .from('achievements')
+        .select('id, title, emoji, description, requirement_type, requirement_value, sort_order')
+        .order('sort_order', { ascending: true });
+      assertNoError(error);
+      const achievements = ((data as AchievementRow[] | null) ?? []).map((achievement) => toAchievement(achievement, stats));
+      return achievements.length ? achievements : fallbackAchievementsForStats(stats);
+    });
   },
 
+  // Group onboarding choices into the exact arrays the screen expects.
   async getOnboardingChoices(): Promise<OnboardingChoices> {
-    return {
-      fitnessLevels: sortByOrder(onboardingChoiceRows.filter((choice) => choice.fieldName === 'fitness_level')).map((choice) => choice.label),
-      intensityLevels: sortByOrder(onboardingChoiceRows.filter((choice) => choice.fieldName === 'preferred_intensity')).map((choice) => choice.label),
-      medicalConditionOptions: sortByOrder(medicalConditionRows).map(({ sortOrder, ...option }) => option),
-    };
+    return readOrFallback('onboarding choices', fallbackOnboardingChoices, async () => {
+      const client = requireSupabase();
+      const [{ data: choices, error: choicesError }, { data: medicalOptions, error: medicalError }] = await Promise.all([
+        client
+          .from('onboarding_choices')
+          .select('field_name, label, sort_order')
+          .order('sort_order', { ascending: true }),
+        client
+          .from('medical_condition_options')
+          .select('id, category, label, sort_order')
+          .order('sort_order', { ascending: true }),
+      ]);
+      assertNoError(choicesError);
+      assertNoError(medicalError);
+
+      const rows = (choices as OnboardingChoiceRow[] | null) ?? [];
+      const result = {
+        fitnessLevels: rows.filter((choice) => choice.field_name === 'fitness_level').map((choice) => choice.label),
+        intensityLevels: rows.filter((choice) => choice.field_name === 'preferred_intensity').map((choice) => choice.label),
+        medicalConditionOptions: ((medicalOptions as Array<{ id: number; category: string; label: string }> | null) ?? []).map((option) => ({
+          id: option.id,
+          category: option.category,
+          label: option.label,
+        })),
+      };
+      return result.fitnessLevels.length && result.intensityLevels.length ? result : fallbackOnboardingChoices;
+    });
   },
 
+  // Profile screen displays these goals as database-backed chips.
   async getProfileGoals() {
-    return profileGoalRows;
+    return readOrFallback('profile goals', fallbackProfileGoals, async () => {
+      const { data, error } = await requireSupabase()
+        .from('profile_goals')
+        .select('label, sort_order')
+        .order('sort_order', { ascending: true });
+      assertNoError(error);
+      const goals = ((data as Array<{ label: string }> | null) ?? []).map((goal) => goal.label);
+      return goals.length ? goals : fallbackProfileGoals;
+    });
   },
 
+  // Profile screen menu is data-driven so actions can be added without changing UI code.
   async getProfileMenuItems() {
-    return profileMenuRows;
+    return readOrFallback('profile menu', fallbackProfileMenuItems, async () => {
+      const { data, error } = await requireSupabase()
+        .from('profile_menu_items')
+        .select('id, icon, label, badge, action_key, color, sort_order')
+        .order('sort_order', { ascending: true });
+      assertNoError(error);
+      const menu = ((data as ProfileMenuRow[] | null) ?? []).map((item) => ({
+        id: item.id,
+        icon: item.icon,
+        label: item.label,
+        badge: item.badge ?? undefined,
+        actionKey: item.action_key ?? undefined,
+        color: safeColor(item.color, '#14B8A6'),
+      }));
+      return menu.length ? menu : fallbackProfileMenuItems;
+    });
+  },
+
+  // Home reads dashboard settings such as the displayed daily goal from app_settings.
+  async getDashboardSettings() {
+    return readOrFallback('dashboard settings', fallbackDashboardSettings, async () => {
+      const { data, error } = await requireSupabase()
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'dashboard_settings')
+        .maybeSingle();
+      assertNoError(error);
+      const value = (data?.value as { goal_label?: string } | null) ?? {};
+      return {
+        goalLabel: value.goal_label ?? fallbackDashboardSettings.goalLabel,
+      };
+    });
+  },
+
+  // Profile and legal links resolve their title, icon, and body from the info_pages table.
+  async getInfoPage(actionKey: string) {
+    const fallback = fallbackInfoPages[actionKey] ?? {
+      title: 'Information',
+      icon: 'info',
+      body: 'This page has not been configured in Supabase yet.',
+    };
+    return readOrFallback('info page', fallback, async () => {
+      const { data, error } = await requireSupabase()
+        .from('info_pages')
+        .select('action_key, title, icon, body')
+        .eq('action_key', actionKey)
+        .maybeSingle();
+      assertNoError(error);
+      const page = data as InfoPageRow | null;
+      return page
+        ? {
+            title: page.title,
+            icon: page.icon,
+            body: page.body,
+          }
+        : fallback;
+    });
   },
 };

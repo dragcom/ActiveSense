@@ -1,30 +1,34 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import IconBadge from '../components/IconBadge';
 import { db } from '../services/database';
 import {
   defaultStats,
   getRedeemedVouchers,
   getStats,
   getWeeklyActivity,
-  saveRedeemedVouchers,
-  saveStats,
+  redeemVoucher,
 } from '../services/storage';
 import { Achievement, RewardVoucher, WeeklyActivity } from '../types';
 
 type AchievementDisplay = Achievement & { unlocked: boolean };
 
+// ProgressScreen shows Healthpoints, weekly activity, rewards, and achievements.
 export default function ProgressScreen() {
+  // Progress data comes from Supabase when signed in, with local fallback for prototype runs.
   const [healthpoints, setHealthpoints] = useState(defaultStats.healthpoints);
   const [weeklyData, setWeeklyData] = useState<WeeklyActivity[]>([]);
   const [vouchers, setVouchers] = useState<RewardVoucher[]>([]);
   const [achievements, setAchievements] = useState<AchievementDisplay[]>([]);
   const [redeemedVouchers, setRedeemedVouchers] = useState<number[]>([]);
+  const [pendingVoucherIds, setPendingVoucherIds] = useState<number[]>([]);
 
   useEffect(() => {
+    // Load stats and reward catalog together so the shop can render immediately.
     const loadProgress = async () => {
       try {
         const [storedStats, activity, rewardVouchers] = await Promise.all([
@@ -47,22 +51,22 @@ export default function ProgressScreen() {
     loadProgress();
   }, []);
 
-  const handleRedeem = async (voucherId: number, points: number) => {
-    if (healthpoints < points || redeemedVouchers.includes(voucherId)) {
+  const handleRedeem = async (voucher: RewardVoucher) => {
+    // Do not redeem if the user cannot afford it or already claimed it.
+    if (healthpoints < voucher.points || redeemedVouchers.includes(voucher.id) || pendingVoucherIds.includes(voucher.id)) {
       return;
     }
-    const updatedPoints = healthpoints - points;
-    setHealthpoints(updatedPoints);
-    const nextRedeemedVouchers = [...redeemedVouchers, voucherId];
-    setRedeemedVouchers(nextRedeemedVouchers);
     try {
-      const storedStats = await getStats();
-      const updatedStats = { ...storedStats, healthpoints: updatedPoints };
-      await saveStats(updatedStats);
-      await saveRedeemedVouchers(nextRedeemedVouchers);
-      setAchievements(await db.getAchievements(updatedStats));
+      // The service handles point deduction through Supabase RPC or local fallback.
+      setPendingVoucherIds((current) => [...current, voucher.id]);
+      const { stats, redeemedVoucherIds } = await redeemVoucher(voucher);
+      setHealthpoints(stats.healthpoints);
+      setRedeemedVouchers(redeemedVoucherIds);
+      setAchievements(await db.getAchievements(stats));
     } catch (error) {
-      Alert.alert('Unable to save rewards', 'Your redemption will sync next time.');
+      Alert.alert('Unable to redeem reward', error instanceof Error ? error.message : 'Please try again later.');
+    } finally {
+      setPendingVoucherIds((current) => current.filter((id) => id !== voucher.id));
     }
   };
 
@@ -72,6 +76,7 @@ export default function ProgressScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+        {/* Header highlights the currency users earn from workouts. */}
         <LinearGradient colors={colors.gradient.primary} style={styles.header}>
           <Text style={styles.headerTitle}>Your Progress</Text>
           <View style={styles.healthpointsCard}>
@@ -84,13 +89,14 @@ export default function ProgressScreen() {
         </LinearGradient>
 
         <View style={{ padding: 16 }}>
+          {/* Weekly chart visualizes recent workout effort. */}
           <View style={styles.chartCard}>
             <View style={styles.chartHeader}>
               <Text style={styles.chartTitle}>Weekly Activity</Text>
               <Feather name="trending-up" size={20} color="#10B981" />
             </View>
             <View style={styles.chart}>
-              {weeklyData.map((day) => {
+              {(weeklyData.length ? weeklyData : [{ id: 'empty', day: '--', points: 0 }]).map((day) => {
                 const heightPercent = (day.points / maxPoints) * 100;
                 return (
                   <View key={day.id} style={styles.barContainer}>
@@ -111,6 +117,7 @@ export default function ProgressScreen() {
             </View>
           </View>
 
+          {/* Rewards Shop spends Healthpoints and updates local progress state. */}
           <View style={{ marginTop: 24 }}>
             <View style={styles.sectionHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -121,13 +128,20 @@ export default function ProgressScreen() {
                 <Text style={styles.hpBadgeText}>{healthpoints} HP</Text>
               </View>
             </View>
+            {vouchers.length === 0 && (
+              <View style={styles.emptyState}>
+                <Feather name="database" size={22} color={colors.text.tertiary} />
+                <Text style={styles.emptyText}>No rewards found. Seed reward_vouchers in Supabase.</Text>
+              </View>
+            )}
             {vouchers.map((voucher) => {
               const canAfford = healthpoints >= voucher.points;
               const isRedeemed = redeemedVouchers.includes(voucher.id);
+              const isRedeeming = pendingVoucherIds.includes(voucher.id);
               return (
                 <View key={voucher.id} style={styles.voucherCard}>
                   <LinearGradient colors={colors.gradient.primary} style={styles.voucherIcon}>
-                    <Text style={{ fontSize: 24 }}>{voucher.emoji}</Text>
+                    <IconBadge icon={voucher.emoji} size={22} />
                   </LinearGradient>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.voucherName}>{voucher.name}</Text>
@@ -138,13 +152,13 @@ export default function ProgressScreen() {
                       </View>
                     </View>
                   </View>
-                  <TouchableOpacity
-                    disabled={!canAfford || isRedeemed}
-                    onPress={() => handleRedeem(voucher.id, voucher.points)}
+                    <TouchableOpacity
+                      disabled={!canAfford || isRedeemed || isRedeeming}
+                    onPress={() => handleRedeem(voucher)}
                   >
                     <LinearGradient
                       colors={
-                        isRedeemed
+                        isRedeemed || isRedeeming
                           ? ['#DCFCE7', '#DCFCE7']
                           : canAfford
                             ? colors.gradient.primary
@@ -156,10 +170,11 @@ export default function ProgressScreen() {
                         style={[
                           styles.redeemButtonText,
                           isRedeemed && { color: '#10B981' },
+                          isRedeeming && { color: '#10B981' },
                           !canAfford && !isRedeemed && { color: '#9CA3AF' },
                         ]}
                       >
-                        {isRedeemed ? '✓ Redeemed' : canAfford ? 'Redeem' : 'Locked'}
+                        {isRedeeming ? 'Redeeming' : isRedeemed ? 'Redeemed' : canAfford ? 'Redeem' : 'Locked'}
                       </Text>
                     </LinearGradient>
                   </TouchableOpacity>
@@ -168,26 +183,38 @@ export default function ProgressScreen() {
             })}
           </View>
 
+          {/* Achievements compare saved stats against fixed milestone requirements. */}
           <View style={{ marginTop: 24 }}>
             <View style={styles.sectionHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Feather name="star" size={20} color="#FBBF24" />
                 <Text style={styles.sectionTitle}>Achievements</Text>
               </View>
-              <TouchableOpacity>
+              <View>
                 <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary.teal }}>
-                  View All
+                  {achievements.length} total
                 </Text>
-              </TouchableOpacity>
+              </View>
             </View>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+              {achievements.length === 0 && (
+                <View style={styles.emptyState}>
+                  <Feather name="database" size={22} color={colors.text.tertiary} />
+                  <Text style={styles.emptyText}>No achievements found. Seed achievements in Supabase.</Text>
+                </View>
+              )}
               {achievements.map((ach, idx) => (
                 <View key={idx} style={{ width: '48%' }}>
                   <LinearGradient
                     colors={ach.unlocked ? ['#FBBF24', '#F97316'] : ['#F3F4F6', '#F3F4F6']}
                     style={styles.achievementCard}
                   >
-                    <Text style={{ fontSize: 40, marginBottom: 8 }}>{ach.emoji}</Text>
+                    <IconBadge
+                      icon={ach.emoji}
+                      size={34}
+                      color={ach.unlocked ? '#fff' : '#9CA3AF'}
+                      style={styles.achievementIcon}
+                    />
                     <Text style={[styles.achievementTitle, !ach.unlocked && { color: '#D1D5DB' }]}>
                       {ach.title}
                     </Text>
@@ -268,6 +295,7 @@ const styles = StyleSheet.create({
   redeemButton: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 9999 },
   redeemButtonText: { fontSize: 12, fontWeight: '600', color: '#fff' },
   achievementCard: { borderRadius: 16, padding: 16, alignItems: 'center' },
+  achievementIcon: { marginBottom: 8 },
   achievementTitle: { fontSize: 12, fontWeight: '600', color: '#fff', textAlign: 'center' },
   achievementDesc: {
     fontSize: 10,
@@ -275,4 +303,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
   },
+  emptyState: {
+    width: '100%',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background.card,
+    padding: 18,
+  },
+  emptyText: { color: colors.text.secondary, fontSize: 12, textAlign: 'center' },
 });

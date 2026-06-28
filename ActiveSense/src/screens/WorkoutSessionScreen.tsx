@@ -1,354 +1,583 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Speech from 'expo-speech';
-import { addWorkoutResult } from '../services/storage';
+import { addWorkoutResult, getUserProfile } from '../services/storage';
+import { getAvatarRenderUri } from '../services/avatarAssetStorage';
 import PoseCameraPreview from '../components/PoseCameraPreview';
 import { db } from '../services/database';
+import { assessSquatTechnique, assessStandingPose, createPoseClassifier, formatPoseClass } from '../services/poseClassifier';
+import { defaultAvatarConfig, normalizeAvatarConfig } from '../data/avatars';
 import { colors } from '../theme/colors';
 import { RootStackParamList } from '../navigation/types';
-import { WorkoutExercise } from '../types';
-import { evaluatePosture } from '../utils/postureRules';
-import WebView, { WebViewMessageEvent } from 'react-native-webview';
+import { AvatarProfileConfig, PoseClassification, PoseLandmark, WorkoutExercise } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutSession'>;
-export interface Landmark {
-  x: number;
-  y: number;
-  z: number;
-  visibility: number;
-}
-const AVATAR_SOURCE = { uri: 'http://activesense.dpdns.org:5173?mode=live' };
 
+// WorkoutSessionScreen runs the camera-first exercise tracker and rep counter.
 export default function WorkoutSessionScreen({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
+  // Exercise progress and pose status stay local to this full-screen session.
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [loadingExercises, setLoadingExercises] = useState(true);
   const [currentExercise, setCurrentExercise] = useState(0);
   const [reps, setReps] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [showCamera, setShowCamera] = useState(true); 
   const [pointsEarned, setPointsEarned] = useState(0);
   const [posePointCount, setPosePointCount] = useState(0);
-  const [dynamicFeedback, setDynamicFeedback] = useState('Position yourself in frame...');
-  const [isStaticMode, setIsStaticMode] = useState(false);
-  const lastAudioTime = useRef(0);
-  const repPhase = useRef<'top' | 'bottom' | 'middle' | 'unknown'>('unknown');
+  const [posePrediction, setPosePrediction] = useState<PoseClassification | null>(null);
+  const [squatFeedback, setSquatFeedback] = useState<string | null>(null);
+  const [isSavingResult, setIsSavingResult] = useState(false);
+  const [sessionAvatar, setSessionAvatar] = useState<AvatarProfileConfig>(defaultAvatarConfig);
+  const poseClassifierRef = useRef<ReturnType<typeof createPoseClassifier> | null>(null);
+  // Refs hold timing flags so camera frames do not trigger extra renders.
+  const poseCountRef = useRef(0);
+  const lastPredictionAtRef = useRef(0);
+  const repArmedRef = useRef(true);
+  const lastRepAtRef = useRef(0);
+  const lastSpokenAtRef = useRef(0);
+  const spokenCueTimesRef = useRef<Record<string, number>>({});
+  const squatPhaseRef = useRef<'ready' | 'down'>('ready');
+
   const currentEx = exercises[currentExercise];
   const targetReps = currentEx ? currentEx.sets * currentEx.reps : 1;
+  const exerciseComplete = reps >= targetReps;
+  const hasPoseTracking = posePointCount > 0;
   const progress = useMemo(() => Math.min(100, (reps / targetReps) * 100), [reps, targetReps]);
-  const startTimeRef = useRef(Date.now());
-  const webViewRef = useRef<WebView>(null);
-  const lastFrameTime = useRef(0);
-  const [isWebViewReady, setIsWebViewReady] = useState(false);
-  const INJECTED_LOG_BRIDGE = `
-  (function() {
-    function wrapLog(type) {
-      var orig = console[type];
-      console[type] = function() {
-        orig.apply(console, arguments);
-        var msg = Array.from(arguments).map(function(v) {
-          try { 
-            return typeof v === 'object' ? JSON.stringify(v) : String(v); 
-          } catch(e) { 
-            return String(v); 
-          }
-        }).join(' ');
-        if (window.ReactNativeWebView) {
-          window.ReactNativeWebView.postMessage(JSON.stringify({ 
-            type: 'CONSOLE_' + type.toUpperCase(), 
-            data: msg 
-          }));
-        }
-      };
-    }
-    wrapLog('log');
-    wrapLog('warn');
-    wrapLog('error');
-  })();
-  true;
-`;
-
-  useEffect(() => {
-    startTimeRef.current = Date.now();
-  }, [currentExercise]);
 
   useEffect(() => {
     let mounted = true;
+    // Start sessions with the avatar chosen during onboarding/profile edit.
+    const loadProfileAvatar = async () => {
+      try {
+        const profile = await getUserProfile();
+        const savedAvatar = normalizeAvatarConfig(profile?.avatar);
+        if (mounted) {
+          setSessionAvatar(savedAvatar);
+        }
+      } catch (error) {
+        // Avatar choice is cosmetic, so workout tracking should continue if profile lookup fails.
+      }
+    };
+    loadProfileAvatar();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const speakWorkoutCue = useCallback((text: string, minIntervalMs = 6000, interrupt = false) => {
+    if (!soundEnabled) {
+      return;
+    }
+    const now = Date.now();
+    const cueKey = text.toLowerCase();
+    if (!interrupt && now - (spokenCueTimesRef.current[cueKey] ?? 0) < minIntervalMs) {
+      return;
+    }
+    if (!interrupt && now - lastSpokenAtRef.current < 1800) {
+      return;
+    }
+    lastSpokenAtRef.current = now;
+    spokenCueTimesRef.current[cueKey] = now;
+    if (Platform.OS !== 'web') {
+      if (interrupt) {
+        Speech.stop();
+      }
+      Speech.speak(text, { rate: 1, pitch: 1, volume: 1 });
+      return;
+    }
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const speech = window.speechSynthesis;
+    const Utterance = window.SpeechSynthesisUtterance;
+    if (!speech || !Utterance) {
+      return;
+    }
+    if (interrupt) {
+      speech.cancel();
+    }
+    const utterance = new Utterance(text);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    speech.speak(utterance);
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    if (!soundEnabled && Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.speechSynthesis?.cancel();
+    }
+    if (!soundEnabled && Platform.OS !== 'web') {
+      Speech.stop();
+    }
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    let mounted = true;
+    // Load the selected workout's exercises and train the pose classifier once.
     const loadExercises = async () => {
       try {
-        const workoutExercises = await db.getWorkoutExercises(route.params?.workoutId);
+        const [workoutExercises, poseTrainingSamples] = await Promise.all([
+          db.getWorkoutExercises(route.params?.workoutId),
+          db.getPoseTrainingSamples(),
+        ]);
         if (mounted) {
+          poseClassifierRef.current = createPoseClassifier(poseTrainingSamples);
           setExercises(workoutExercises);
           setLoadingExercises(false);
         }
       } catch (error) {
-        if (mounted) setLoadingExercises(false);
+        if (mounted) {
+          setLoadingExercises(false);
+        }
         Alert.alert('Unable to load workout', 'Please try another session.');
       }
     };
+
     loadExercises();
-    return () => { mounted = false; };
+
+    return () => {
+      mounted = false;
+    };
   }, [route.params?.workoutId]);
 
-  const triggerVoice = useCallback((text: string) => {
-    if (!soundEnabled) return;
+  const handleLandmarks = useCallback((landmarks: PoseLandmark[]) => {
+    // This callback receives 33-point pose frames from web or native camera preview.
+    if (poseCountRef.current !== landmarks.length) {
+      poseCountRef.current = landmarks.length;
+      setPosePointCount(landmarks.length);
+    }
     const now = Date.now();
-    if (now - lastAudioTime.current > 3000) {
-      Speech.speak(text, { rate: 1.05 });
-      lastAudioTime.current = now;
+    if (now - lastPredictionAtRef.current < 300) {
+      // Classify only a few times per second to keep the UI responsive.
+      return;
     }
-  }, [soundEnabled]);
-
-  const onMessage = (event: WebViewMessageEvent) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-      
-      if (data.type === 'WEBVIEW_READY') {
-        setIsWebViewReady(true);
-        console.log("🚀 [STEP 3] RN received WEBVIEW_READY handshake!");
-      } else if (data.type === 'LIVE_POSE_ACK') {
-        console.log(`📥 [STEP 5] SUCCESS! WebView processed frame. Points checked: ${data.pointsChecked}`);
-      } 
-      else if (data.type === 'CONSOLE_LOG') {
-        console.log(`🌐 [Avatar WebView] ${data.data}`);
-      } else if (data.type === 'CONSOLE_WARN') {
-        console.warn(`🌐 [Avatar WebView WARN] ${data.data}`);
-      } else if (data.type === 'CONSOLE_ERROR') {
-        console.error(`🌐 [Avatar WebView ERROR] ${data.data}`);
-      }
-    } catch (e) {
-      console.error("Error parsing message from WebView:", e);
+    lastPredictionAtRef.current = now;
+    const prediction = poseClassifierRef.current?.(landmarks) ?? null;
+    const squatAssessment = currentEx?.poseClass === 'squat'
+      ? assessSquatTechnique(landmarks)
+      : null;
+    const standingAssessment = currentEx?.poseClass === 'squat'
+      ? assessStandingPose(landmarks)
+      : null;
+    const effectivePrediction =
+      squatAssessment?.isProper
+        ? {
+            label: 'squat' as const,
+            confidence: Math.max(prediction?.label === 'squat' ? prediction.confidence : 0, squatAssessment.confidence),
+            distance: prediction?.label === 'squat' ? prediction.distance : 0,
+          }
+        : prediction;
+    setPosePrediction(effectivePrediction);
+    const nextSquatFeedback =
+      currentEx?.poseClass === 'squat' && squatAssessment && !squatAssessment.isProper
+        ? squatAssessment.reasons[0] ?? 'Set hips back and keep knees aligned'
+        : null;
+    setSquatFeedback(nextSquatFeedback);
+    if (nextSquatFeedback) {
+      speakWorkoutCue(nextSquatFeedback, 7000);
     }
-  };
 
-  const handleLandmarks = useCallback((landmarks: Landmark[]) => {
-    if (isPaused || !currentEx || !isWebViewReady || !webViewRef.current) return;
+    if (!currentEx || isPaused) {
+      return;
+    }
 
-    const result = evaluatePosture(currentEx.name, landmarks);
-
-    const targetJoints = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
-    const packedData: Record<number, {x: number, y: number, z: number}> = {};
-
-    targetJoints.forEach(id => {
-      if (landmarks[id]) {
-        packedData[id] = {
-          x: landmarks[id].x,
-          y: landmarks[id].y,
-          z: landmarks[id].z
-        };
+    if (currentEx.poseClass === 'squat') {
+      if (squatAssessment?.isProper) {
+        squatPhaseRef.current = 'down';
+        return;
       }
+
+      if (
+        squatPhaseRef.current === 'down' &&
+        standingAssessment?.isStanding &&
+        now - lastRepAtRef.current >= 900
+      ) {
+        squatPhaseRef.current = 'ready';
+        lastRepAtRef.current = now;
+        setReps((current) => {
+          const next = Math.min(targetReps, current + 1);
+          if (next !== current) {
+            speakWorkoutCue(`${next}`, 600, true);
+          }
+          return next;
+        });
+      }
+      return;
+    }
+
+    if (!effectivePrediction) {
+      return;
+    }
+
+    const isExpectedPose =
+      effectivePrediction.label === currentEx.poseClass && effectivePrediction.confidence >= 0.45;
+    if (!isExpectedPose) {
+      // Re-arm counting when the user leaves the expected pose.
+      repArmedRef.current = true;
+      return;
+    }
+
+    if (!repArmedRef.current || now - lastRepAtRef.current < 900) {
+      // Debounce reps so one held pose is not counted repeatedly.
+      return;
+    }
+
+    repArmedRef.current = false;
+    lastRepAtRef.current = now;
+    setReps((current) => {
+      const next = Math.min(targetReps, current + 1);
+      if (next !== current) {
+        speakWorkoutCue(`${next}`, 600, true);
+      }
+      return next;
     });
+  }, [currentEx, isPaused, speakWorkoutCue, targetReps]);
 
-    const now = Date.now();
-    if (now - lastFrameTime.current > 32) {
-      lastFrameTime.current = now;
-
-      console.log("⚡ [STEP 4] RN -> Injecting live coordinate frame into Avatar WebView...");
-
-      const payload = JSON.stringify({ type: 'LIVE_POSE', joints: packedData });
-      const script = `if (window.receiveRNMessage) { window.receiveRNMessage(${payload}); } true;`;
-      webViewRef.current.injectJavaScript(script);
+  useEffect(() => {
+    // New exercises start ready to count the next valid rep.
+    repArmedRef.current = true;
+    lastRepAtRef.current = 0;
+    squatPhaseRef.current = 'ready';
+    setSquatFeedback(null);
+    if (currentEx) {
+      speakWorkoutCue(`${currentEx.name}. Target ${targetReps} reps`, 1200, true);
     }
-  }, [isPaused, currentEx, isWebViewReady]);
+  }, [currentExercise, currentEx, speakWorkoutCue, targetReps]);
 
   const handleManualRep = () => {
-    if (isPaused) return;
-    setReps(prev => {
-      const newReps = prev + 1;
-      if (newReps > targetReps) return targetReps;
-      if (newReps === targetReps) triggerVoice("Set complete!");
-      return newReps;
+    // Simulator and unsupported native builds can still walk through the workout flow.
+    setReps((current) => {
+      const next = Math.min(targetReps, current + 1);
+      if (next !== current) {
+        speakWorkoutCue(`${next}`, 600, true);
+      }
+      return next;
     });
   };
 
   const handleNext = async () => {
-    if (!currentEx) return;
-    const completionRatio = Math.min(1, reps / targetReps);
-    const timeElapsed = (Date.now() - startTimeRef.current) / 1000;
-    const minExpectedTime = reps * 2; 
-    const isRushed = reps > 0 && timeElapsed < minExpectedTime;
-    let earnedThisRound = Math.floor(currentEx.points * completionRatio);
-    
-    if (isRushed) {
-      earnedThisRound = Math.floor(earnedThisRound * 0.5);
-      Alert.alert("Pacing Warning", "You finished faster than expected! Points reduced.");
+    // Advance between exercises or save the final workout result.
+    if (!currentEx || isSavingResult) {
+      return;
     }
-
-    const newTotal = pointsEarned + earnedThisRound;
-    setPointsEarned(newTotal);
+    const earned = pointsEarned + currentEx.points;
+    setPointsEarned(earned);
 
     if (currentExercise < exercises.length - 1) {
+      speakWorkoutCue('Exercise complete. Next exercise.', 900, true);
       setCurrentExercise(currentExercise + 1);
       setReps(0);
-      repPhase.current = 'unknown';
-      startTimeRef.current = Date.now(); 
+      setPosePrediction(null);
+      setSquatFeedback(null);
+      repArmedRef.current = true;
+      squatPhaseRef.current = 'ready';
       return;
     }
 
     try {
-      await addWorkoutResult(newTotal, route.params?.workoutId, posePointCount);
+      speakWorkoutCue('Workout complete. Saving your progress.', 900, true);
+      setIsSavingResult(true);
+      await addWorkoutResult(earned, route.params?.workoutId, posePointCount);
       navigation.goBack();
     } catch (error) {
+      setIsSavingResult(false);
       Alert.alert('Unable to save workout', 'Please try again.');
     }
   };
 
-  if (loadingExercises || !currentEx) {
+  if (loadingExercises) {
+    // The camera view waits until exercise metadata and pose samples are ready.
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color={colors.primary.tealLight} />
-        </View>
-      </SafeAreaView>
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color={colors.primary.tealLight} />
+      </View>
     );
   }
 
+  if (!currentEx) {
+    // Empty workouts should explain the setup issue instead of leaving the user on a spinner.
+    return (
+      <View style={styles.emptyContainer}>
+        <Feather name="database" size={28} color={colors.primary.tealLight} />
+        <Text style={styles.emptyTitle}>No exercises found</Text>
+        <Text style={styles.emptyCopy}>Seed workout_exercises in Supabase, then try this workout again.</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.emptyButton}>
+          <Text style={styles.emptyButtonText}>Back to workouts</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const detectedText = posePrediction
+    ? `${formatPoseClass(posePrediction.label)} · ${Math.round(posePrediction.confidence * 100)}%`
+    : posePointCount > 0
+      ? 'Tracking pose'
+      : 'Looking for full pose';
+  const trackerText = `${posePointCount}/${currentEx.targetLandmarks} points`;
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 12 }}>
+    <View style={styles.container}>
+      {/* The camera preview is the full-screen underlay behind all workout controls. */}
+      <View style={styles.cameraUnderlay}>
+        <PoseCameraPreview
+          enabled={!isPaused}
+          onLandmarks={handleLandmarks}
+          overlayMode="avatar"
+          avatarUrl={getAvatarRenderUri(sessionAvatar)}
+          presentation="fill"
+        />
+      </View>
+
+      <LinearGradient
+        colors={['rgba(17,24,39,0.92)', 'rgba(17,24,39,0.45)', 'rgba(17,24,39,0)']}
+        style={styles.topShade}
+        pointerEvents="none"
+      />
+      <LinearGradient
+        colors={['rgba(17,24,39,0)', 'rgba(17,24,39,0.72)', 'rgba(17,24,39,0.94)']}
+        style={styles.bottomShade}
+        pointerEvents="none"
+      />
+
+      {/* Top overlay shows the current exercise and live feedback prompt. */}
+      <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
             <Feather name="x" size={24} color="#fff" />
           </TouchableOpacity>
+          <View style={styles.pointsPill}>
+            <Feather name="award" size={15} color={colors.primary.tealLight} />
+            <Text style={styles.pointsPillText}>Total {pointsEarned} HP</Text>
+          </View>
+        </View>
+
+        <View style={styles.titleBlock}>
+          <Text style={styles.headerTitle} numberOfLines={1}>{currentEx.name}</Text>
+          <Text style={styles.headerSubtitle}>Exercise {currentExercise + 1} of {exercises.length}</Text>
+        </View>
+
+        <View style={styles.feedbackPill}>
+          <Feather name="check-circle" size={18} color="#fff" />
+          <Text style={styles.feedbackText} numberOfLines={2}>
+            {squatFeedback
+              ? squatFeedback
+              : posePrediction?.label === currentEx.poseClass
+              ? `Recognized ${formatPoseClass(currentEx.poseClass)}. ${currentEx.feedbackPrompt}`
+              : currentEx.feedbackPrompt}
+          </Text>
+        </View>
+      </View>
+
+      {/* Bottom panel shows rep progress, controls, and next-step action. */}
+      <View style={[styles.bottomPanel, { paddingBottom: insets.bottom + 12 }]}>
+        <View style={styles.repCard}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>{currentEx.name}</Text>
-            <Text style={styles.headerSubtitle}>Exercise {currentExercise + 1} of {exercises.length}</Text>
+            <Text style={styles.repValue}>{reps}/{targetReps}</Text>
+            <Text style={styles.repSubtext} numberOfLines={1}>
+              {`${trackerText} · ${detectedText}`}
+            </Text>
           </View>
+          <View style={styles.hpPill}>
+            <Feather name="award" size={15} color={colors.primary.teal} />
+            <Text style={styles.hpPillText}>+{currentEx.points} HP</Text>
+          </View>
+          <TouchableOpacity onPress={() => setReps(0)} style={styles.resetButton}>
+            <Feather name="refresh-cw" size={22} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityLabel="Add one manual rep"
+            onPress={handleManualRep}
+            style={[styles.manualRepButton, hasPoseTracking && styles.manualRepButtonSubtle]}
+          >
+            <Feather name="plus" size={20} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.soundButton, soundEnabled && styles.soundButtonActive]}
+            onPress={() => setSoundEnabled(!soundEnabled)}
+          >
+            <Feather name={soundEnabled ? 'volume-2' : 'volume-x'} size={18} color="#fff" />
+          </TouchableOpacity>
         </View>
-        <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
-          <Text style={styles.headerTotalText}>{pointsEarned} HP Total</Text>
+
+        <View style={styles.progressBarTrack}>
+          <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
+        </View>
+
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={styles.pauseButton} onPress={() => setIsPaused(!isPaused)}>
+            <Feather name={isPaused ? 'play' : 'pause'} size={20} color="#fff" />
+            <Text style={styles.actionText}>{isPaused ? 'Resume' : 'Pause'}</Text>
+          </TouchableOpacity>
+          <LinearGradient
+            colors={exerciseComplete && !isSavingResult ? colors.gradient.primary : ['#4B5563', '#4B5563']}
+            style={styles.nextGradient}
+          >
+            <TouchableOpacity disabled={!exerciseComplete || isSavingResult} onPress={handleNext} style={styles.nextButton}>
+              <Feather name={exerciseComplete && !isSavingResult ? 'check-circle' : 'lock'} size={20} color="#fff" />
+              <Text style={styles.actionText}>
+                {isSavingResult
+                  ? 'Saving'
+                  : exerciseComplete
+                  ? currentExercise === exercises.length - 1
+                    ? 'Finish'
+                    : 'Next exercise'
+                  : 'Complete reps'}
+              </Text>
+            </TouchableOpacity>
+          </LinearGradient>
         </View>
       </View>
-
-      <View style={styles.content}>
-        <LinearGradient colors={colors.gradient.success} style={styles.feedback}>
-          <Feather name="activity" size={16} color="#fff" />
-          <Text style={styles.feedbackText}>{dynamicFeedback}</Text>
-        </LinearGradient>
-
-        <View style={styles.avatarContainer}>
-          <View style={[styles.cameraView, !showCamera && { position: 'absolute', top: -10000, left: -10000 }]}>
-            <PoseCameraPreview enabled={!isPaused} onLandmarks={handleLandmarks} style={styles.cameraView} />
-          </View>
-
-          <View style={[styles.cameraView, showCamera && { position: 'absolute', top: -10000, left: -10000 }]}>
-            <WebView
-              ref={webViewRef}
-              source={AVATAR_SOURCE}
-              onMessage={onMessage}
-              style={styles.cameraView}
-              originWhitelist={['*']}
-              scrollEnabled={false}
-              javaScriptEnabled={true}
-              injectedJavaScriptBeforeContentLoaded={INJECTED_LOG_BRIDGE}
-            />
-          </View>
-        </View>
-
-        <View style={styles.controlPanel}>
-          <View style={styles.controlHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.exerciseName}>{currentEx.name}</Text>
-              <Text style={styles.exerciseSets}>{currentEx.sets} sets × {currentEx.reps} reps</Text>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TouchableOpacity
-                style={[styles.controlButton, soundEnabled && { backgroundColor: colors.primary.teal }]}
-                onPress={() => setSoundEnabled(!soundEnabled)}
-              >
-                <Feather name={soundEnabled ? 'volume-2' : 'volume-x'} size={18} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.controlButton, showCamera && { backgroundColor: colors.primary.teal }]}
-                onPress={() => setShowCamera(!showCamera)}
-              >
-                <Feather name="camera" size={18} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {isStaticMode ? (
-            <TouchableOpacity style={styles.staticLogButton} onLongPress={handleManualRep} delayLongPress={500} activeOpacity={0.8}>
-              <Feather name="check-circle" size={24} color="#fff" style={{ marginRight: 8 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.staticLogTitle}>Reps (Tap if missed) </Text>
-                <Text style={styles.staticLogSubtitle}>{reps} of {targetReps} completed</Text>
-              </View>
-            </TouchableOpacity>
-          ) : (
-            <LinearGradient colors={colors.gradient.primary} style={styles.repCounter}>
-              <TouchableOpacity style={{ flex: 1, paddingVertical: 4 }} onPress={handleManualRep} activeOpacity={0.7}>
-                <Text style={styles.repLabel}>Reps (Tap if missed)</Text>
-                <Text style={styles.repValue}>{reps} / {targetReps}</Text>
-              </TouchableOpacity>
-              <View style={styles.pointsIndicator}>
-                <Text style={{ fontSize: 13, marginRight: 4 }}>🎉</Text>
-                <Text style={styles.pointsText}>+{currentEx.points} HP</Text>
-              </View>
-              <TouchableOpacity onPress={() => setReps(0)} style={[styles.resetButton, {marginLeft: 8}]}>
-                <Feather name="refresh-cw" size={18} color="#fff" />
-              </TouchableOpacity>
-            </LinearGradient>
-          )}
-
-          <View style={styles.progressBarTrack}>
-            <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
-          </View>
-
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <TouchableOpacity style={styles.pauseButton} onPress={() => setIsPaused(!isPaused)}>
-              <Feather name={isPaused ? 'play' : 'pause'} size={18} color="#fff" />
-              <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>{isPaused ? 'Resume' : 'Pause'}</Text>
-            </TouchableOpacity>
-            <View style={{ flex: 1 }}>
-              <LinearGradient colors={reps >= targetReps ? colors.gradient.primary : ['#4B5563', '#4B5563']} style={{ borderRadius: 9999 }}>
-                <TouchableOpacity onPress={handleNext} style={styles.nextButtonAction}>
-                  <Feather name={reps >= targetReps ? "skip-forward" : "fast-forward"} size={18} color="#fff" />
-                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
-                    {currentExercise === exercises.length - 1 ? (reps >= targetReps ? 'Finish' : 'End Early') : (reps >= targetReps ? 'Next' : 'Skip')}
-                  </Text>
-                </TouchableOpacity>
-              </LinearGradient>
-            </View>
-          </View>
-        </View>
-      </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background.dark },
-  loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { backgroundColor: colors.background.dark, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderColor: '#1F2937' },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  headerSubtitle: { fontSize: 12, color: colors.text.tertiary, marginTop: 2 },
-  headerTotalText: { fontSize: 16, fontWeight: '700', color: colors.primary.tealLight },
-  content: { flex: 1 },
-  feedback: { marginHorizontal: 16, marginTop: 8, marginBottom: 4, padding: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  feedbackText: { fontSize: 12, fontWeight: '600', color: '#fff' },
-  pointsIndicator: { backgroundColor: '#FBBF24', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, flexDirection: 'row', alignItems: 'center', marginRight: 10 },
-  pointsText: { fontSize: 11, fontWeight: '700', color: colors.text.primary },
-  avatarContainer: { flex: 1, backgroundColor: '#000', width: '100%', marginVertical: 4, alignItems: 'stretch', justifyContent: 'center', overflow: 'hidden' },
-  cameraView: { flex: 1, width: '100%', height: '100%', alignSelf: 'stretch' },
-  controlPanel: { backgroundColor: 'rgba(31, 41, 55, 0.95)', marginHorizontal: 16, marginBottom: 12, padding: 10, borderRadius: 16, borderWidth: 1, borderColor: '#374151' },
-  controlHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  exerciseName: { fontSize: 15, fontWeight: '700', color: '#fff' },
-  exerciseSets: { fontSize: 11, color: colors.text.tertiary, marginTop: 1 },
-  controlButton: { width: 32, height: 32, backgroundColor: '#374151', borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  repCounter: { borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, marginBottom: 6, flexDirection: 'row', alignItems: 'center' },
-  repLabel: { fontSize: 10, color: 'rgba(255,255,255,0.8)' },
-  repValue: { fontSize: 22, fontWeight: '700', color: '#fff' }, 
-  resetButton: { width: 28, height: 28, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  progressBarTrack: { height: 5, backgroundColor: '#374151', borderRadius: 9999, overflow: 'hidden', marginBottom: 8 },
+  container: { flex: 1, backgroundColor: colors.background.dark, overflow: 'hidden' },
+  cameraUnderlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: colors.background.dark,
+  },
+  topShade: { position: 'absolute', left: 0, right: 0, top: 0, height: 260 },
+  bottomShade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 260 },
+  topOverlay: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 18 },
+  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  iconButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+  pointsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(17, 24, 39, 0.72)',
+    borderWidth: 1,
+    borderColor: colors.primary.teal,
+  },
+  pointsPillText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  titleBlock: { marginTop: 14 },
+  headerTitle: { fontSize: 23, fontWeight: '800', color: '#fff' },
+  headerSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.72)', marginTop: 3 },
+  feedbackPill: {
+    marginTop: 14,
+    minHeight: 56,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(20, 184, 166, 0.88)',
+  },
+  feedbackText: { flex: 1, color: '#fff', fontSize: 13, fontWeight: '700', lineHeight: 18 },
+  bottomPanel: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 0,
+    gap: 12,
+    paddingHorizontal: 2,
+  },
+  repCard: {
+    minHeight: 88,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(20, 184, 166, 0.86)',
+  },
+  repValue: { color: '#fff', fontSize: 46, fontWeight: '900' },
+  repSubtext: { color: 'rgba(255,255,255,0.84)', fontSize: 11, fontWeight: '700', marginTop: 2 },
+  hpPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 9999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#FBBF24',
+  },
+  hpPillText: { color: colors.text.primary, fontSize: 12, fontWeight: '900' },
+  resetButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  manualRepButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.42)',
+  },
+  manualRepButtonSubtle: { backgroundColor: 'rgba(17, 24, 39, 0.28)' },
+  soundButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.38)',
+  },
+  soundButtonActive: { backgroundColor: 'rgba(17, 24, 39, 0.54)' },
+  progressBarTrack: { height: 8, backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: 9999, overflow: 'hidden' },
   progressBarFill: { height: '100%', backgroundColor: colors.primary.tealLight },
-  pauseButton: { flex: 1, backgroundColor: '#374151', paddingVertical: 10, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  staticLogButton: { backgroundColor: colors.primary.teal, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 8, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.primary.tealLight },
-  staticLogTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  staticLogSubtitle: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
-  nextButtonAction: { paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }
+  actionRow: { flexDirection: 'row', gap: 12 },
+  pauseButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(75, 85, 99, 0.96)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  nextGradient: { flex: 1, borderRadius: 9999 },
+  nextButton: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  actionText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  emptyContainer: {
+    flex: 1,
+    backgroundColor: colors.background.dark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    padding: 28,
+  },
+  emptyTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  emptyCopy: { color: colors.text.tertiary, fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  emptyButton: {
+    marginTop: 8,
+    borderRadius: 9999,
+    backgroundColor: colors.primary.teal,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  emptyButtonText: { color: '#fff', fontSize: 13, fontWeight: '800' },
 });

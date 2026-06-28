@@ -1,3 +1,4 @@
+// These route types keep navigation calls safe across the whole app.
 export type RootStackParamList = {
   AuthLanding: undefined;
   Login: undefined;
@@ -7,6 +8,7 @@ export type RootStackParamList = {
   WorkoutSession: { workoutId?: number } | undefined;
 };
 
+// The bottom tabs live inside the root stack's Main screen.
 export type MainTabParamList = {
   Home: undefined;
   Workouts: undefined;

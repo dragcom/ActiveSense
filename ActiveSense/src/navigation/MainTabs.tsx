@@ -1,3 +1,4 @@
+import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Feather } from '@expo/vector-icons';
 import HomeScreen from '../screens/HomeScreen';
@@ -9,6 +10,7 @@ import { MainTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
+// MainTabs is the persistent bottom navigation after onboarding is done.
 export default function MainTabs() {
   return (
     <Tab.Navigator
@@ -29,6 +31,7 @@ export default function MainTabs() {
         },
         tabBarIcon: ({ color, size }) => {
           const iconSize = size ?? 20;
+          // Each route gets a familiar Feather icon so the tab bar stays easy to scan.
           switch (route.name) {
             case 'Home':
               return <Feather name="home" color={color} size={iconSize} />;
@@ -44,6 +47,7 @@ export default function MainTabs() {
         },
       })}
     >
+      {/* These four tabs form the core ActiveSense dashboard. */}
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Workouts" component={WorkoutsScreen} />
       <Tab.Screen name="Progress" component={ProgressScreen} />

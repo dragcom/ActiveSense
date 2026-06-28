@@ -2,10 +2,13 @@ internal import Expo
 import React
 import ReactAppDependencyProvider
 
+// AppDelegate is the native iOS entry point that boots Expo and React Native.
 @main
 class AppDelegate: ExpoAppDelegate {
+  // React Native renders into this native UIWindow.
   var window: UIWindow?
 
+  // Expo's factory wires native modules, React Native, and the JS bundle together.
   var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
   var reactNativeFactory: RCTReactNativeFactory?
 
@@ -13,6 +16,7 @@ class AppDelegate: ExpoAppDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    // Build the React Native factory before showing the app window.
     let delegate = ReactNativeDelegate()
     let factory = ExpoReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()
@@ -21,6 +25,7 @@ class AppDelegate: ExpoAppDelegate {
     reactNativeFactory = factory
 
 #if os(iOS) || os(tvOS)
+    // Start the JavaScript app registered as "main" from index.ts.
     window = UIWindow(frame: UIScreen.main.bounds)
     factory.startReactNative(
       withModuleName: "main",
@@ -37,6 +42,7 @@ class AppDelegate: ExpoAppDelegate {
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
+    // Forward custom URL schemes to React Navigation and Expo.
     return super.application(app, open: url, options: options) || RCTLinkingManager.application(app, open: url, options: options)
   }
 
@@ -46,11 +52,13 @@ class AppDelegate: ExpoAppDelegate {
     continue userActivity: NSUserActivity,
     restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
   ) -> Bool {
+    // Forward universal links to React Native before falling back to Expo.
     let result = RCTLinkingManager.application(application, continue: userActivity, restorationHandler: restorationHandler)
     return super.application(application, continue: userActivity, restorationHandler: restorationHandler) || result
   }
 }
 
+// ReactNativeDelegate tells native iOS where to load the JavaScript bundle from.
 class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
   // Extension point for config-plugins
 
@@ -61,8 +69,10 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
 
   override func bundleURL() -> URL? {
 #if DEBUG
+    // Development builds load from Metro.
     return RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: ".expo/.virtual-metro-entry")
 #else
+    // Release builds load the bundled JS file inside the app.
     return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
 #endif
   }

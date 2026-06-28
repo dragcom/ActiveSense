@@ -1,235 +1,264 @@
-import { useRef } from 'react';
-import { StyleSheet, View, StyleProp, ViewStyle } from 'react-native';
-import { WebView } from 'react-native-webview';
-import { Landmark } from '../screens/WorkoutSessionScreen';
+import React, { useEffect, useState } from 'react';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { CameraType, CameraView, useCameraPermissions } from 'expo-camera';
+import { Feather } from '@expo/vector-icons';
+import { colors } from '../theme/colors';
+import { PoseLandmark } from '../types';
+import AvatarPoseOverlay from './AvatarPoseOverlay';
+import PoseSkeletonOverlay from './PoseSkeletonOverlay';
+import NativePoseCameraView, { isNativePoseCameraAvailable } from './native/NativePoseCameraView';
 
-interface PoseCameraPreviewProps {
+// Native PoseCameraPreview owns camera permission, native pose events, and overlay choice.
+type PoseCameraPreviewProps = {
   enabled: boolean;
-  onLandmarks: (landmarks: Landmark[]) => void;
-  style?: StyleProp<ViewStyle>;
-}
+  onLandmarks?: (landmarks: PoseLandmark[]) => void;
+  overlayMode?: 'avatar' | 'skeleton';
+  avatarUrl?: string;
+  presentation?: 'card' | 'fill';
+};
 
-export default function PoseCameraPreview({ enabled, onLandmarks, style }: PoseCameraPreviewProps) {
-  const webViewRef = useRef<WebView>(null);
+export default function PoseCameraPreview({
+  enabled,
+  onLandmarks,
+  overlayMode = 'avatar',
+  avatarUrl,
+  presentation = 'card',
+}: PoseCameraPreviewProps) {
+  // Expo Camera provides the permission flow even when the custom native view renders the preview.
+  const [permission, requestPermission] = useCameraPermissions();
+  const [facing, setFacing] = useState<CameraType>('front');
+  const [cameraReady, setCameraReady] = useState(false);
+  const [slowCamera, setSlowCamera] = useState(false);
+  const [nativeStatus, setNativeStatus] = useState<string | null>(null);
+  const [landmarks, setLandmarks] = useState<PoseLandmark[]>([]);
+  const isNativeMobile = Platform.OS === 'ios' || Platform.OS === 'android';
+  const hasNativePose = isNativeMobile && isNativePoseCameraAvailable();
 
-  if (!enabled) return null;
-
-  const handleMessage = (event: any) => {
-    try {
-      const message = JSON.parse(event.nativeEvent.data);
-      if (message.type === 'LANDMARKS') {
-        onLandmarks(message.data);
-      } else if (message.error) {
-        console.error('WASM Camera Error:', message.error);
-      }
-    } catch (e) {
+  useEffect(() => {
+    // Pausing the preview clears landmarks so reps and overlays stop updating.
+    if (!enabled) {
+      setCameraReady(false);
+      setSlowCamera(false);
+      setLandmarks([]);
+      onLandmarks?.([]);
     }
-  };
+  }, [enabled, onLandmarks]);
 
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <style>
-        body, html { margin: 0; padding: 0; overflow: hidden; height: 100%; background-color: #111827; position: relative; }
-        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 999; display: block; }
-        #status { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); color: #fff; padding: 4px 8px; font-family: sans-serif; font-size: 10px; border-radius: 4px; z-index: 1000; }
-      </style>
-      <script type="module">
-        import {PoseLandmarker, FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs";
+  useEffect(() => {
+    // Show a helpful notice if camera startup takes unusually long.
+    if (!enabled || !permission?.granted || cameraReady) {
+      return undefined;
+    }
+    const timer = setTimeout(() => setSlowCamera(true), 2500);
+    return () => clearTimeout(timer);
+  }, [cameraReady, enabled, permission?.granted]);
 
-        const statusEl = document.getElementById('status');
-        function setStatus(msg) { statusEl.innerText = msg; }
+  if (!enabled) {
+    // The parent can disable tracking while keeping the layout stable.
+    return (
+      <View style={[styles.nativePanel, presentation === 'fill' && styles.fillPanel]}>
+        <Text style={styles.nativeTitle}>Camera Paused</Text>
+        <Text style={styles.nativeCopy}>Turn on camera tracking to start the native workout preview.</Text>
+      </View>
+    );
+  }
 
-        const POSE_CONNECTIONS = [
-          [0, 1], [1, 2], [2, 3], [3, 7], [0, 4], [4, 5], [5, 6], [6, 8], [9, 10],
-          [11, 12], [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19],
-          [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20],
-          [11, 23], [12, 24], [23, 24], [23, 25], [25, 27], [27, 29], [27, 31], [29, 31],
-          [24, 26], [26, 28], [28, 30], [28, 32], [30, 32],
-        ];
+  if (!permission) {
+    // Permission state loads asynchronously on both iOS and Android.
+    return (
+      <View style={[styles.nativePanel, presentation === 'fill' && styles.fillPanel]}>
+        <Text style={styles.nativeTitle}>Preparing Camera</Text>
+        <Text style={styles.nativeCopy}>Checking iOS camera permission...</Text>
+      </View>
+    );
+  }
 
-        const clampUnit = (value) => Math.max(0, Math.min(1, value));
-        const getVisibility = (landmark) => landmark?.visibility ?? 1;
-
-        function drawSkeleton(canvas, landmarks, videoWidth, videoHeight) {
-          const context = canvas.getContext('2d');
-          if (!context || !videoWidth || !videoHeight) return;
-
-          const displayWidth = canvas.clientWidth;
-          const displayHeight = canvas.clientHeight;
-          const scale = window.devicePixelRatio || 1;
-          const targetWidth = Math.max(1, Math.round(displayWidth * scale));
-          const targetHeight = Math.max(1, Math.round(displayHeight * scale));
-
-          if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-            canvas.width = targetWidth;
-            canvas.height = targetHeight;
-          }
-
-          context.setTransform(scale, 0, 0, scale, 0, 0);
-          context.clearRect(0, 0, displayWidth, displayHeight);
-
-          if (!landmarks || landmarks.length !== 33) return;
-
-          const videoRatio = videoWidth / videoHeight;
-          const panelRatio = displayWidth / displayHeight;
-          const drawnWidth = panelRatio > videoRatio ? displayWidth : displayHeight * videoRatio;
-          const drawnHeight = panelRatio > videoRatio ? displayWidth / videoRatio : displayHeight;
-          const offsetX = (displayWidth - drawnWidth) / 2;
-          const offsetY = (displayHeight - drawnHeight) / 2;
-
-          const pointFor = (landmark) => ({
-            x: offsetX + (1 - clampUnit(landmark.x)) * drawnWidth,
-            y: offsetY + clampUnit(landmark.y) * drawnHeight,
-          });
-
-          context.lineCap = 'round';
-          context.lineJoin = 'round';
-          context.shadowColor = 'rgba(15, 23, 42, 0.45)';
-          context.shadowBlur = 8;
-          context.lineWidth = 4;
-          context.strokeStyle = 'rgba(45, 212, 191, 0.92)';
-
-          POSE_CONNECTIONS.forEach(([from, to]) => {
-            if (getVisibility(landmarks[from]) < 0.35 || getVisibility(landmarks[to]) < 0.35) return;
-            const start = pointFor(landmarks[from]);
-            const end = pointFor(landmarks[to]);
-            context.beginPath();
-            context.moveTo(start.x, start.y);
-            context.lineTo(end.x, end.y);
-            context.stroke();
-          });
-
-          landmarks.forEach((landmark, index) => {
-            if (getVisibility(landmark) < 0.25) return;
-            const point = pointFor(landmark);
-            const radius = index <= 10 ? 3.5 : 4.5;
-            
-            context.beginPath();
-            context.fillStyle = '#FFFFFF';
-            context.arc(point.x, point.y, radius + 2, 0, Math.PI * 2);
-            context.fill();
-            
-            context.beginPath();
-            context.fillStyle = '#14B8A6';
-            context.arc(point.x, point.y, radius, 0, Math.PI * 2);
-            context.fill();
-          });
-        }
-
-        async function initMediaPipe() {
-          try {
-            setStatus("Loading model...");
-            const vision = await FilesetResolver.forVisionTasks(
-              "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm"
-            );
-
-            const poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-              baseOptions: {
-                modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task",
-                delegate: "CPU" 
-              },
-              runningMode: "VIDEO",
-            });
-
-            setStatus("Starting camera...");
-            const video = document.getElementById('webcam');
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-              video: { facingMode: "user" } 
-            });
-            video.srcObject = stream;
-            
-            video.onloadedmetadata = () => {
-              const canvas = document.getElementById('overlay');
-              canvas.width = video.videoWidth;
-              canvas.height = video.videoHeight;
-              
-              setStatus("Tracking...");
-              predictWebcam(poseLandmarker, video);
-            };
-          } catch (err) {
-            setStatus("Init Error: " + err.message);
-          }
-        }
-
-        async function predictWebcam(poseLandmarker, video) {
-          const canvas = document.getElementById('overlay');
-          let frameCounter = 0;
-          
-          async function step() {
-            if (video.readyState >= 2) {
-              try {
-                const results = poseLandmarker.detectForVideo(video, performance.now());
-                if (results.landmarks && results.landmarks.length > 0) {
-                  const landmarks = results.landmarks[0];
-                  
-                  setStatus("Points: " + landmarks.length);
-                  drawSkeleton(canvas, landmarks, video.videoWidth, video.videoHeight);
-                  
-                  frameCounter++;
-                  if (frameCounter % 40 === 0) {
-                    console.log("[STEP 1] MediaPipe WASM client generated tracking coordinates payload bundle successfully.");
-                  }
-
-                  window.ReactNativeWebView.postMessage(JSON.stringify({
-                    type: 'LANDMARKS',
-                    data: landmarks 
-                  }));
-                } else {
-                  setStatus("Searching...");
-                  const ctx = canvas.getContext('2d');
-                  ctx.clearRect(0, 0, canvas.width, canvas.height);
-                }
-              } catch (e) {
-                setStatus("Process Error: " + e.message);
-              }
-            }
-            window.requestAnimationFrame(step);
-          }
-          step();
-        }
-        initMediaPipe();
-      </script>
-    </head>
-    <body>
-      <div id="status">Initializing AI...</div>
-      <video id="webcam" autoplay playsinline muted></video>
-      <canvas id="overlay"></canvas>
-    </body>
-    </html>
-  `;
+  if (!permission.granted) {
+    // No camera frames are requested until the user grants permission.
+    return (
+      <View style={[styles.nativePanel, presentation === 'fill' && styles.fillPanel]}>
+        <Feather name="camera" size={26} color={colors.primary.tealLight} />
+        <Text style={styles.nativeTitle}>Camera Access Required</Text>
+        <Text style={styles.nativeCopy}>ActiveSense needs the camera for local workout tracking.</Text>
+        <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
+          <Text style={styles.permissionText}>Allow Camera</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
-    <View style={[styles.container, style]}>
-      <WebView
-        ref={webViewRef}
-        originWhitelist={['*']}
-        source={{ html: htmlContent, baseUrl: 'https://localhost' }}  
-        onMessage={handleMessage}
-        allowsInlineMediaPlayback={true}
-        mediaPlaybackRequiresUserAction={false}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        androidLayerType="hardware"
-        {...({
-          onPermissionRequest: (request: any) => {
-            const hasCamera = request.resources.includes('android.webkit.resource.VIDEO_CAPTURE');
-            if (hasCamera) {
-              request.grant(request.resources);
+    <View style={[styles.cameraPanel, presentation === 'fill' && styles.fillPanel]}>
+      {hasNativePose ? (
+        // The custom native view runs MediaPipe and emits 33 pose landmarks to JS.
+        <NativePoseCameraView
+          style={StyleSheet.absoluteFill}
+          enabled={enabled}
+          cameraFacing={facing === 'back' ? 'back' : 'front'}
+          onLandmarks={(event) => {
+            const landmarks = (event.nativeEvent.landmarks ?? []).slice(0, 33);
+            setSlowCamera(false);
+            setCameraReady(true);
+            setLandmarks(landmarks);
+            onLandmarks?.(landmarks);
+          }}
+          onStatus={(event) => {
+            const status = event.nativeEvent.status ?? null;
+            setNativeStatus(status);
+            if (status === 'native-pose-running' || status === 'native-pose-ready') {
+              setSlowCamera(false);
+              setCameraReady(true);
             }
-          }
-        } as any)}
-        style={styles.webview}
-        containerStyle={{ borderRadius: 24, overflow: 'hidden' }}
-      />
+          }}
+        />
+      ) : (
+        // Plain CameraView is a graceful fallback when the native pose module is unavailable.
+        <CameraView
+          style={StyleSheet.absoluteFill}
+          facing={facing}
+          mirror={facing === 'front'}
+          onCameraReady={() => {
+            setSlowCamera(false);
+            setCameraReady(true);
+          }}
+        />
+      )}
+
+      {/* Avatar mode uses the rigged GLB first and skeleton fallback when needed. */}
+      {overlayMode === 'avatar' && (
+        <AvatarPoseOverlay landmarks={landmarks} avatarUrl={avatarUrl} mirrored={facing === 'front'} />
+      )}
+      {/* Skeleton mode keeps the original 33-point stick figure visible. */}
+      {overlayMode === 'skeleton' && <PoseSkeletonOverlay landmarks={landmarks} mirrored={facing === 'front'} />}
+
+      {slowCamera && !cameraReady && (
+        <View style={styles.simulatorNotice}>
+          <Feather name="camera-off" size={24} color="#fff" />
+          <Text style={styles.simulatorTitle}>
+            {hasNativePose ? 'Waiting for iPhone camera' : 'Native pose runtime unavailable'}
+          </Text>
+          <Text style={styles.simulatorCopy}>
+            {hasNativePose
+              ? 'Use a physical iPhone if the simulator cannot provide live frames.'
+              : 'Build a custom iOS dev client to run MediaPipe and receive 33 pose points.'}
+          </Text>
+        </View>
+      )}
+
+      {presentation === 'card' && (
+        <>
+          <View style={styles.statusPill}>
+            <Text style={styles.statusText}>
+              {cameraReady
+                ? hasNativePose
+                  ? 'MediaPipe pose live'
+                  : 'Camera live'
+                : nativeStatus ?? 'Starting iOS camera...'}
+            </Text>
+          </View>
+
+          <View style={styles.metricsPill}>
+            <Text style={styles.metricsText}>Live preview</Text>
+          </View>
+        </>
+      )}
+
+      <TouchableOpacity
+        style={styles.flipButton}
+        onPress={() => setFacing((current) => (current === 'front' ? 'back' : 'front'))}
+      >
+        <Feather name="refresh-cw" size={18} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: '#111827' },
-  webview: { flex: 1, backgroundColor: 'transparent' },
+  cameraPanel: {
+    width: '100%',
+    aspectRatio: 4 / 3,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#111827',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  fillPanel: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    minHeight: 0,
+    aspectRatio: undefined,
+    borderRadius: 0,
+    borderWidth: 0,
+  },
+  statusPill: {
+    position: 'absolute',
+    left: 12,
+    bottom: 12,
+    maxWidth: '68%',
+    backgroundColor: 'rgba(17, 24, 39, 0.78)',
+    borderRadius: 9999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  statusText: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  metricsPill: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    backgroundColor: 'rgba(17, 24, 39, 0.78)',
+    borderRadius: 9999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  metricsText: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  flipButton: {
+    position: 'absolute',
+    right: 12,
+    top: 52,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+  },
+  nativePanel: {
+    width: '100%',
+    minHeight: 220,
+    borderRadius: 24,
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#374151',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  nativeTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginTop: 8 },
+  nativeCopy: { color: colors.text.tertiary, fontSize: 12, textAlign: 'center', marginTop: 8 },
+  permissionButton: {
+    marginTop: 16,
+    borderRadius: 9999,
+    backgroundColor: colors.primary.teal,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  permissionText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  simulatorNotice: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    top: '34%',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 20,
+    padding: 18,
+    backgroundColor: 'rgba(17, 24, 39, 0.72)',
+  },
+  simulatorTitle: { color: '#fff', fontSize: 15, fontWeight: '700', textAlign: 'center' },
+  simulatorCopy: { color: colors.text.tertiary, fontSize: 12, textAlign: 'center' },
 });
