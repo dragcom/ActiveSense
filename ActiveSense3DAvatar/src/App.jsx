@@ -35,7 +35,7 @@ function App() {
           }
         });
       } catch (e) {
-        console.error("Failed to load injected avatar recipe", e);
+        console.error("Failed to inject avatar JSON", e);
       }
     }
   }, [categories, changeAsset, updateColor]);
@@ -43,18 +43,18 @@ function App() {
   const searchParams = new URLSearchParams(window.location.search);
   const view = searchParams.get('view'); 
   const isPreviewMode = searchParams.get('preview') === 'true';
-
+  const isLiveMode = searchParams.get('mode') === 'live';
   const isConfiguratorPage = view === 'configurator';
   const isUIVisible = isConfiguratorPage && !isPreviewMode && !viewOnly;
 
   return (
-    <>
+    <div style={{ width: "100vw", height: "100vh", margin: 0, padding: 0, overflow: "hidden", position: "relative" }}>
       <div style={{ 
         display: isUIVisible ? 'block' : 'none', 
-        position: 'absolute',                   
+        position: 'absolute',                    
         top: 0,
         left: 0,
-        zIndex: 99,                             
+        zIndex: 99,                               
         pointerEvents: isUIVisible ? 'auto' : 'none' 
       }}>
         <UI />
@@ -70,26 +70,30 @@ function App() {
           preserveDrawingBuffer: true, 
         }} 
         camera={{
-          position: DEFAULT_CAMERA_POSITION,
-          fov: 50,  
+          position: isLiveMode ? [0, 0.8, 2.5] : DEFAULT_CAMERA_POSITION,
+          fov: isLiveMode ? 45 : 50,  
         }}
-        onCreated={({ camera }) => camera.lookAt(0, -1, 0)}
+        onCreated={({ camera }) => {
+          if (isLiveMode) {
+            camera.lookAt(0, 0.3, 0); 
+          } else {
+            camera.lookAt(0, -1, 0); 
+          }
+        }}
         shadows={{ type: THREE.PCFShadowMap }}
       >
         {!isPreviewMode && <color attach="background" args={['#14121c']} />}
         {!isPreviewMode && <fog attach="fog" args={['#14121c', 10, 40]} />}
-        
-        <group position-y={-0.6}>
+        <group position-y={isLiveMode ? -0.4 : -0.6}>
           <Suspense fallback={null}>
             <Experience />
           </Suspense>
         </group>
-
         <EffectComposer>
           <Bloom mipmapBlur luminanceThreshold={1.2} intensity={1.2}/>
         </EffectComposer>
       </Canvas>
-    </>
+    </div>
   );
 }
 

@@ -7,8 +7,8 @@ const PosesBox = () => {
 	const curPose = useConfiguratorStore((state) => state.pose);
 	const setPose = useConfiguratorStore((state) => state.setPose);
 	return (
-		<div className="pointer-events-auto rounded-t-lg bg-gradient-to-br from-black/30 
-		to-indigo-900/20 backdrop-blur-sm drop-shadow-md flex p-6 gap-3">
+		<div className="pointer-events-auto overflow-x-auto touch-pan-x noscrollbar rounded-t-lg bg-gradient-to-br 
+		from-black/30 to-indigo-900/20 backdrop-blur-sm drop-shadow-md flex p-6 gap-3">
 			{Object.values(PHOTO_POSES).map((pose) => (
 				<button
 					key={pose}
