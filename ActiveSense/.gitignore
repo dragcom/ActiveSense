@@ -1,0 +1,18 @@
+node_modules/
+.DS_Store
+.expo/
+dist/
+# Android build outputs and hidden system configurations
+android/build/
+android/.gradle/
+android/app/build/
+*.keystore
+
+# iOS build outputs and temporary project state
+ios/build/
+ios/Pods/
+ios/.xcode.env.local
+*.xcworkspace/
+.env
+.env.local
+.env.*.local

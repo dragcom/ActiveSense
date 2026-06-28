@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,44 +14,66 @@ import { Feather } from '@expo/vector-icons';
 import { CompositeNavigationProp, useIsFocused, useNavigation } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { WebView } from 'react-native-webview';
 import { colors } from '../theme/colors';
-import { workouts } from '../data/workouts';
-import { defaultStats, getStats, getUserProfile } from '../services/storage';
+import { db } from '../services/database';
+import { defaultStats, getStats, getUserProfile, getWeeklyActivity } from '../services/storage';
 import { MainTabParamList, RootStackParamList } from '../navigation/types';
-import { UserProfile, UserStats } from '../types';
+import { UserProfile, UserStats, WeeklyActivity, Workout } from '../types';
 
 type NavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Home'>,
   NativeStackNavigationProp<RootStackParamList>
 >;
 
-const weeklyData = [
-  { id: 'mon', day: 'Mon', points: 120 },
-  { id: 'tue', day: 'Tue', points: 150 },
-  { id: 'wed', day: 'Wed', points: 100 },
-  { id: 'thu', day: 'Thu', points: 180 },
-  { id: 'fri', day: 'Fri', points: 140 },
-  { id: 'sat', day: 'Sat', points: 200 },
-  { id: 'sun', day: 'Sun', points: 160 },
-];
-
 export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const isFocused = useIsFocused();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats>(defaultStats);
-  const [loading, setLoading] = useState(true);
+  const [weeklyData, setWeeklyData] = useState<WeeklyActivity[]>([]);
+  const [highlightWorkout, setHighlightWorkout] = useState<Workout | null>(null);
+  const [loading, setLoading] = useState(true); 
+  const webViewRef = useRef<WebView>(null);
+  const webViewUrl = 'http://activesense.dpdns.org:5173'; 
 
-  const highlightWorkout = useMemo(() => workouts[0], []);
+  const syncStateToWebView = (p: UserProfile | null, s: UserStats) => {
+    if (webViewRef.current) {
+      webViewRef.current.postMessage(
+        JSON.stringify({
+          type: 'HYDRATE_STATE',
+          payload: { 
+              profile: p, 
+              stats: s,
+              viewOnly: true
+          }
+        })
+      );
+    }
+  };
+
+  useEffect(() => {
+    if (!loading) {
+      syncStateToWebView(profile, stats);
+    }
+  }, [profile, stats, loading]);
+
 
   useEffect(() => {
     let mounted = true;
     const loadData = async () => {
       try {
-        const [storedProfile, storedStats] = await Promise.all([getUserProfile(), getStats()]);
+        const [storedProfile, storedStats, activity] = await Promise.all([
+          getUserProfile(),
+          getStats(),
+          getWeeklyActivity(),
+        ]);
+        const recommendedWorkout = await db.getRecommendedWorkout(storedProfile);
         if (mounted) {
           setProfile(storedProfile);
           setStats(storedStats);
+          setWeeklyData(activity);
+          setHighlightWorkout(recommendedWorkout);
           setLoading(false);
         }
       } catch (error) {
@@ -72,7 +94,18 @@ export default function HomeScreen() {
     };
   }, [isFocused]);
 
-  if (loading) {
+  const onWebViewMessage = (event: any) => {
+    try {
+      const message = JSON.parse(event.nativeEvent.data);
+      if (message.type === 'WEB_READY') {
+        syncStateToWebView(profile, stats);
+      }
+    } catch (err) {
+      console.error("Message parse error:", err);
+    }
+  };
+
+  if (loading || !highlightWorkout) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loader}>
@@ -88,6 +121,23 @@ export default function HomeScreen() {
         <LinearGradient colors={colors.gradient.primary} style={styles.header}>
           <Text style={styles.greeting}>Hi {profile?.name ?? 'there'} 👋</Text>
           <Text style={styles.subGreeting}>Keep your streak alive with a quick session today.</Text>
+          
+          <View style={styles.modelContainer}>
+              <WebView
+                ref={webViewRef}
+                source={{ uri: webViewUrl }} 
+                onMessage={onWebViewMessage}
+                style={styles.webview}
+                originWhitelist={['*']}
+                onLoadEnd={() => syncStateToWebView(profile, stats)}
+                bounces={false}
+                scrollEnabled={false}
+                overScrollMode="never"
+                androidLayerType="hardware" 
+                containerStyle={{ backgroundColor: 'transparent' }} 
+              />
+            </View>
+
           <View style={styles.streakCard}>
             <View>
               <Text style={styles.streakLabel}>Current streak</Text>
@@ -95,7 +145,7 @@ export default function HomeScreen() {
             </View>
             <View style={styles.streakBadge}>
               <Feather name="zap" size={20} color="#fff" />
-              <Text style={styles.streakBadgeText}>On fire</Text>
+              <Text style={styles.streakBadgeText}>{stats.streakDays > 0 ? 'On fire' : 'Fresh start'}</Text>
             </View>
           </View>
         </LinearGradient>
@@ -123,7 +173,10 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.recommendCard}>
-          <LinearGradient colors={highlightWorkout.gradient} style={styles.recommendHeader}>
+          <LinearGradient 
+            colors={highlightWorkout.gradient as [string, string, ...string[]]} 
+            style={styles.recommendHeader}
+          >
             <Text style={styles.recommendEmoji}>{highlightWorkout.emoji}</Text>
             <View style={styles.recommendBadge}>
               <Text style={styles.recommendBadgeText}>{highlightWorkout.category}</Text>
@@ -186,7 +239,8 @@ export default function HomeScreen() {
         </View>
         <View style={styles.weeklyChart}>
           {weeklyData.map((day) => {
-            const heightPercent = (day.points / 200) * 100;
+            const maxWeeklyPoints = Math.max(100, ...weeklyData.map((item) => item.points));
+            const heightPercent = (day.points / maxWeeklyPoints) * 100;
             return (
               <View key={day.id} style={styles.weeklyBarContainer}>
                 <View style={styles.weeklyBarTrack}>
@@ -342,4 +396,16 @@ const styles = StyleSheet.create({
   },
   weeklyBarFill: { width: '100%', borderRadius: 9999 },
   weeklyLabel: { fontSize: 10, color: colors.text.secondary, marginTop: 8 },
+
+  modelContainer: {
+    width: '100%',
+    height: 400, 
+    marginTop: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  webview: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
 });

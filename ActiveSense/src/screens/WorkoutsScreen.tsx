@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,8 +15,9 @@ import { Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
-import { workouts, workoutCategories } from '../data/workouts';
+import { db } from '../services/database';
 import { RootStackParamList } from '../navigation/types';
+import { Workout } from '../types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -22,6 +25,37 @@ export default function WorkoutsScreen() {
   const navigation = useNavigation<NavigationProp>();
   const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const [workoutCategories, setWorkoutCategories] = useState<string[]>(['All']);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadWorkouts = async () => {
+      try {
+        const [storedWorkouts, storedCategories] = await Promise.all([
+          db.getWorkouts(),
+          db.getWorkoutCategories(),
+        ]);
+        if (mounted) {
+          setWorkouts(storedWorkouts);
+          setWorkoutCategories(storedCategories);
+          setLoading(false);
+        }
+      } catch (error) {
+        if (mounted) {
+          setLoading(false);
+        }
+        Alert.alert('Unable to load workouts', 'Please try again later.');
+      }
+    };
+
+    loadWorkouts();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const filteredWorkouts = useMemo(() => {
     return workouts.filter((workout) => {
@@ -33,6 +67,16 @@ export default function WorkoutsScreen() {
       return matchesCategory && matchesSearch;
     });
   }, [activeCategory, searchQuery]);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loader}>
+          <ActivityIndicator size="large" color={colors.primary.teal} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -143,6 +187,7 @@ export default function WorkoutsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background.base },
+  loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { padding: 20, paddingBottom: 12 },
   headerTitle: { fontSize: 24, fontWeight: '700', color: colors.text.primary, marginBottom: 16 },
   searchBar: {

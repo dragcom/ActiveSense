@@ -1,21 +1,36 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, StatusBar, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
+import * as NavigationBar from 'expo-navigation-bar'; 
 import AppNavigator from './src/navigation/AppNavigator';
 import { hasCompletedOnboarding } from './src/services/storage';
 import { colors } from './src/theme/colors';
 import { RootStackParamList } from './src/navigation/types';
 
 export default function App() {
-  const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('Onboarding');
+  const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('AuthLanding');
   const [isReady, setIsReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      const configureNavigationBar = async () => {
+        try {
+          await NavigationBar.setVisibilityAsync('hidden');
+          await NavigationBar.setBehaviorAsync('overlay-swipe');
+        } catch (error) {
+          console.warn('Failed to configure navigation bar:', error);
+        }
+      };
+      configureNavigationBar();
+    }
+  }, []);
 
   const loadOnboardingState = async () => {
     setIsReady(false);
     setLoadError(null);
     try {
       const completed = await hasCompletedOnboarding();
-      setInitialRoute(completed ? 'Main' : 'Onboarding');
+      setInitialRoute(completed ? 'Main' : 'AuthLanding');
     } catch (error) {
       setLoadError('Unable to load app data.');
     } finally {

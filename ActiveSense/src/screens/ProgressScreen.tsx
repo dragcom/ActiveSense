@@ -1,50 +1,50 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
-import { defaultStats, getStats, saveStats } from '../services/storage';
+import { db } from '../services/database';
+import {
+  defaultStats,
+  getRedeemedVouchers,
+  getStats,
+  getWeeklyActivity,
+  saveRedeemedVouchers,
+  saveStats,
+} from '../services/storage';
+import { Achievement, RewardVoucher, WeeklyActivity } from '../types';
 
-const weeklyData = [
-  { id: 'mon', day: 'Mon', points: 120 },
-  { id: 'tue', day: 'Tue', points: 150 },
-  { id: 'wed', day: 'Wed', points: 100 },
-  { id: 'thu', day: 'Thu', points: 180 },
-  { id: 'fri', day: 'Fri', points: 140 },
-  { id: 'sat', day: 'Sat', points: 200 },
-  { id: 'sun', day: 'Sun', points: 160 },
-];
-
-const vouchers = [
-  { id: 1, name: 'FairPrice $5 Voucher', points: 500, emoji: '🛒', category: 'Groceries' },
-  { id: 2, name: 'GrabFood $10 Voucher', points: 1000, emoji: '🍔', category: 'Food' },
-  { id: 3, name: 'Guardian $5 Voucher', points: 500, emoji: '💊', category: 'Health' },
-  { id: 4, name: 'Decathlon $15 Voucher', points: 1500, emoji: '⚽', category: 'Sports' },
-];
-
-const achievements = [
-  { title: '7-Day Streak', emoji: '🔥', unlocked: true, desc: 'Complete 7 days in a row' },
-  { title: 'First Workout', emoji: '🎯', unlocked: true, desc: 'Finish your first session' },
-  { title: '1000 Points', emoji: '💯', unlocked: true, desc: 'Earn 1000 Healthpoints' },
-  { title: '30-Day Streak', emoji: '🏆', unlocked: false, desc: 'Complete 30 consecutive days' },
-];
+type AchievementDisplay = Achievement & { unlocked: boolean };
 
 export default function ProgressScreen() {
   const [healthpoints, setHealthpoints] = useState(defaultStats.healthpoints);
+  const [weeklyData, setWeeklyData] = useState<WeeklyActivity[]>([]);
+  const [vouchers, setVouchers] = useState<RewardVoucher[]>([]);
+  const [achievements, setAchievements] = useState<AchievementDisplay[]>([]);
   const [redeemedVouchers, setRedeemedVouchers] = useState<number[]>([]);
 
   useEffect(() => {
-    const loadStats = async () => {
+    const loadProgress = async () => {
       try {
-        const storedStats = await getStats();
+        const [storedStats, activity, rewardVouchers] = await Promise.all([
+          getStats(),
+          getWeeklyActivity(),
+          db.getRewardVouchers(),
+        ]);
+        const storedRedeemedVouchers = await getRedeemedVouchers();
+        const storedAchievements = await db.getAchievements(storedStats);
         setHealthpoints(storedStats.healthpoints);
+        setWeeklyData(activity);
+        setVouchers(rewardVouchers);
+        setRedeemedVouchers(storedRedeemedVouchers);
+        setAchievements(storedAchievements);
       } catch (error) {
         Alert.alert('Unable to load stats', 'Please try again later.');
       }
     };
 
-    loadStats();
+    loadProgress();
   }, []);
 
   const handleRedeem = async (voucherId: number, points: number) => {
@@ -53,16 +53,20 @@ export default function ProgressScreen() {
     }
     const updatedPoints = healthpoints - points;
     setHealthpoints(updatedPoints);
-    setRedeemedVouchers([...redeemedVouchers, voucherId]);
+    const nextRedeemedVouchers = [...redeemedVouchers, voucherId];
+    setRedeemedVouchers(nextRedeemedVouchers);
     try {
       const storedStats = await getStats();
-      await saveStats({ ...storedStats, healthpoints: updatedPoints });
+      const updatedStats = { ...storedStats, healthpoints: updatedPoints };
+      await saveStats(updatedStats);
+      await saveRedeemedVouchers(nextRedeemedVouchers);
+      setAchievements(await db.getAchievements(updatedStats));
     } catch (error) {
       Alert.alert('Unable to save rewards', 'Your redemption will sync next time.');
     }
   };
 
-  const maxPoints = 200;
+  const maxPoints = Math.max(100, ...weeklyData.map((day) => day.points));
   const totalWeekly = weeklyData.reduce((sum, day) => sum + day.points, 0);
 
   return (

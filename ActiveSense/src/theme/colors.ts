@@ -9,5 +9,6 @@ export const colors = {
     success: ['#2DD4BF', '#22D3EE'],
     warning: ['#FB923C', '#F43F5E'],
     purple: ['#A78BFA', '#EC4899'],
+    privacy: ['#60A5FA', '#38BDF8'],
   },
 } as const;

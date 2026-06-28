@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -6,22 +6,79 @@ import { Feather } from '@expo/vector-icons';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
+import { db } from '../services/database';
 import { clearUserProfile, getUserProfile } from '../services/storage';
 import { RootStackParamList } from '../navigation/types';
-import { UserProfile } from '../types';
+import { ProfileMenuItem, UserProfile } from '../types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+const infoPages = {
+  settings: {
+    title: 'Account Settings',
+    icon: 'settings',
+    body: 'Supabase Auth will manage email, password, and account security here. Local prototype data is currently stored on this device so the app can run offline during development.',
+  },
+  notifications: {
+    title: 'Notifications',
+    icon: 'bell',
+    body: 'Workout reminders, streak prompts, and reward updates will be configured here. Notification preferences will become database-backed user settings.',
+  },
+  support: {
+    title: 'Help & Support',
+    icon: 'help-circle',
+    body: 'For the prototype, support content explains how ActiveSense uses local pose estimation, Healthpoints, and tailored workouts. A future support center can connect FAQs and contact forms.',
+  },
+  privacy: {
+    title: 'Privacy Settings',
+    icon: 'shield',
+    body: 'ActiveSense processes camera frames locally for pose landmarks. Raw workout video is not uploaded in this prototype; Supabase should store profile, workout, reward, and landmark summary metadata only.',
+  },
+} as const;
+
+const formatMemberSince = (createdAt?: string) => {
+  if (!createdAt) {
+    return 'Active member';
+  }
+  return `Active member since ${new Intl.DateTimeFormat('en', {
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date(createdAt))}`;
+};
+
+const getMobilityLevel = (conditions?: string[]) => {
+  const selected = conditions ?? [];
+  if (selected.includes('None')) {
+    return 'Standard';
+  }
+  if (
+    selected.some((condition) =>
+      ['Knee pain', 'Back pain', 'Arthritis', 'Balance concerns', 'Recent injury'].includes(condition),
+    )
+  ) {
+    return 'Supported';
+  }
+  return 'Monitored';
+};
 
 export default function ProfileScreen() {
   const navigation = useNavigation<NavigationProp>();
   const isFocused = useIsFocused();
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [profileGoals, setProfileGoals] = useState<string[]>([]);
+  const [menuItems, setMenuItems] = useState<ProfileMenuItem[]>([]);
 
   useEffect(() => {
     const loadProfile = async () => {
       try {
-        const profile = await getUserProfile();
+        const [profile, goals, menu] = await Promise.all([
+          getUserProfile(),
+          db.getProfileGoals(),
+          db.getProfileMenuItems(),
+        ]);
         setUser(profile);
+        setProfileGoals(goals);
+        setMenuItems(menu);
       } catch (error) {
         Alert.alert('Unable to load profile', 'Please try again later.');
       }
@@ -32,31 +89,26 @@ export default function ProfileScreen() {
     }
   }, [isFocused]);
 
-  const handleLogout = () => {
-    Alert.alert('Log out', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Log out',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await clearUserProfile();
-            navigation.reset({ index: 0, routes: [{ name: 'Onboarding' }] });
-          } catch (error) {
-            Alert.alert('Unable to log out', 'Please try again.');
-          }
-        },
-      },
-    ]);
+  const handleLogout = async () => {
+    try {
+      await clearUserProfile();
+      navigation.reset({ index: 0, routes: [{ name: 'AuthLanding' }] });
+    } catch (error) {
+      Alert.alert('Unable to log out', 'Please try again.');
+    }
   };
 
-  const menuItems = [
-    { icon: 'settings', label: 'Account Settings', color: colors.primary.teal },
-    { icon: 'bell', label: 'Notifications', badge: '3', color: colors.primary.teal },
-    { icon: 'help-circle', label: 'Help & Support', color: colors.primary.teal },
-    { icon: 'shield', label: 'Privacy Settings', color: colors.primary.teal },
-    { icon: 'log-out', label: 'Log Out', color: '#EF4444', onPress: handleLogout },
-  ];
+  const openInfoPage = (actionKey: ProfileMenuItem['actionKey']) => {
+    if (!actionKey) {
+      return;
+    }
+    if (actionKey === 'logout') {
+      handleLogout();
+      return;
+    }
+    const page = infoPages[actionKey];
+    navigation.navigate('InfoPage', page);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -67,15 +119,27 @@ export default function ProfileScreen() {
               <View style={styles.avatar}>
                 <Text style={{ fontSize: 40 }}>👤</Text>
               </View>
-              <TouchableOpacity style={styles.cameraButton}>
+              <TouchableOpacity
+                style={styles.cameraButton}
+                onPress={() =>
+                  navigation.navigate('InfoPage', {
+                    title: 'Profile Photo',
+                    icon: 'camera',
+                    body: 'Profile photo upload will connect to Supabase Storage. The camera used during workouts remains separate and is used for local pose landmarks.',
+                  })
+                }
+              >
                 <Feather name="camera" size={12} color={colors.primary.teal} />
               </TouchableOpacity>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.userName}>{user?.name ?? 'ActiveSense Member'}</Text>
-              <Text style={styles.memberSince}>Active Member since Jan 2026</Text>
+              <Text style={styles.memberSince}>{formatMemberSince(user?.createdAt)}</Text>
             </View>
-            <TouchableOpacity style={styles.editButton}>
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() => navigation.navigate('Onboarding', { mode: 'edit' })}
+            >
               <Feather name="edit-3" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -113,7 +177,7 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Mobility Level</Text>
-              <Text style={styles.infoValue}>Full</Text>
+              <Text style={styles.infoValue}>{getMobilityLevel(user?.medicalConditions)}</Text>
             </View>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Preferred Intensity</Text>
@@ -122,7 +186,7 @@ export default function ProfileScreen() {
             <LinearGradient colors={colors.gradient.primary} style={styles.updateButton}>
               <TouchableOpacity
                 style={{ paddingVertical: 12, alignItems: 'center' }}
-                onPress={() => Alert.alert('Update Profile', 'This feature is coming soon.')}
+                onPress={() => navigation.navigate('Onboarding', { mode: 'edit' })}
               >
                 <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>
                   Update Health Profile
@@ -134,8 +198,8 @@ export default function ProfileScreen() {
           <View style={styles.goalsCard}>
             <Text style={styles.cardTitle}>Your Goals</Text>
             <View style={styles.goalsContainer}>
-              {['Stay Active', 'Build Strength', 'Improve Flexibility'].map((goal, idx) => (
-                <View key={idx} style={styles.goalChip}>
+              {profileGoals.map((goal) => (
+                <View key={goal} style={styles.goalChip}>
                   <Text style={styles.goalText}>{goal}</Text>
                 </View>
               ))}
@@ -146,8 +210,9 @@ export default function ProfileScreen() {
             {menuItems.map((item, index) => (
               <TouchableOpacity
                 key={item.label}
+                accessibilityRole="button"
                 style={[styles.menuItem, index < menuItems.length - 1 && styles.menuItemBorder]}
-                onPress={item.onPress}
+                onPress={() => openInfoPage(item.actionKey)}
               >
                 <View
                   style={[
@@ -193,11 +258,41 @@ export default function ProfileScreen() {
               Empowering healthy lifestyles through AI-powered guidance and gamification
             </Text>
             <View style={styles.links}>
-              <TouchableOpacity><Text style={styles.linkText}>Terms</Text></TouchableOpacity>
+              <TouchableOpacity
+                onPress={() =>
+                  navigation.navigate('InfoPage', {
+                    title: 'Terms',
+                    icon: 'file-text',
+                    body: 'Prototype terms: ActiveSense is an educational NUS Orbital prototype and should not replace professional medical advice. Stop exercising if you feel pain, dizziness, or discomfort.',
+                  })
+                }
+              >
+                <Text style={styles.linkText}>Terms</Text>
+              </TouchableOpacity>
               <Text style={{ color: colors.text.tertiary }}>•</Text>
-              <TouchableOpacity><Text style={styles.linkText}>Privacy</Text></TouchableOpacity>
+              <TouchableOpacity
+                onPress={() =>
+                  navigation.navigate('InfoPage', {
+                    title: 'Privacy',
+                    icon: 'shield',
+                    body: 'Workout camera frames are processed locally for MediaPipe landmarks. Future Supabase storage should hold profile and progress records, not raw camera video.',
+                  })
+                }
+              >
+                <Text style={styles.linkText}>Privacy</Text>
+              </TouchableOpacity>
               <Text style={{ color: colors.text.tertiary }}>•</Text>
-              <TouchableOpacity><Text style={styles.linkText}>Contact</Text></TouchableOpacity>
+              <TouchableOpacity
+                onPress={() =>
+                  navigation.navigate('InfoPage', {
+                    title: 'Contact',
+                    icon: 'mail',
+                    body: 'Contact and feedback forms will be connected when backend messaging is added. For now, this page confirms the link is wired.',
+                  })
+                }
+              >
+                <Text style={styles.linkText}>Contact</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
