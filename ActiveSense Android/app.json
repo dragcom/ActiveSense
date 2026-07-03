@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "ActiveSense",
+    "slug": "ActiveSense",
+    "scheme": "activesense",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "ActiveSense uses the camera to show your workout preview and process pose landmarks locally.",
+        "NSPhotoLibraryAddUsageDescription": "ActiveSense can save avatar booth snapshots to your photo library when you choose to export them."
+      },
+      "bundleIdentifier": "com.anonymous.ActiveSense"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
+      "package": "com.anonymous.ActiveSense"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "ActiveSense uses the camera to show your workout preview and process pose landmarks locally."
+        }
+      ],
+      "expo-asset",
+      "expo-media-library",
+      "expo-sharing"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "67c82d52-c9d1-406e-b898-e7fb5277d5f7"
+      }
+    }
+  }
+}

@@ -1,0 +1,37 @@
+plugins {
+  // This local package builds as an Android library Expo module.
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.activesense.pose'
+version = '0.1.0'
+
+android {
+  // Namespace must match the Kotlin package for this module.
+  namespace 'com.activesense.pose'
+
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+}
+
+configurations.configureEach {
+  // MediaPipe and CameraX can pull conflicting futures versions, so force a safe one.
+  resolutionStrategy.force 'com.google.guava:listenablefuture:1.0'
+}
+
+dependencies {
+  // CameraX provides preview frames for the MediaPipe pose analyzer.
+  def camerax_version = '1.6.0'
+
+  implementation "androidx.camera:camera-core:${camerax_version}"
+  implementation "androidx.camera:camera-camera2:${camerax_version}"
+  implementation "androidx.camera:camera-lifecycle:${camerax_version}"
+  implementation "androidx.camera:camera-view:${camerax_version}"
+  implementation 'androidx.core:core-ktx:1.18.0'
+  implementation 'androidx.appcompat:appcompat:1.7.1'
+  // MediaPipe Tasks Vision runs the on-device pose landmark model.
+  implementation 'com.google.mediapipe:tasks-vision:0.10.35'
+}

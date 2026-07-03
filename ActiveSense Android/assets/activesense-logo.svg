@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <defs>
+    <linearGradient id="canvaGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22d3ee" />
+      <stop offset="100%" stop-color="#077362" />
+    </linearGradient>
+  </defs>
+
+  <rect width="400" height="400" rx="90" fill="url(#canvaGradient)" />
+  <circle cx="120" cy="150" r="28" fill="#ffffff" />
+  <path
+    d="M 135 220 L 185 280 L 295 150"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="36"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M 155 110 A 50 50 0 0 1 155 190"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="12"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M 185 85 A 85 85 0 0 1 185 215"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="12"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
