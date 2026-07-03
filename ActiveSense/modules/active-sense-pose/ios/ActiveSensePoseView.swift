@@ -166,7 +166,10 @@ final class ActiveSensePoseView: ExpoView {
 
     session.addOutput(output)
     output.connection(with: .video)?.videoOrientation = .portrait
-    output.connection(with: .video)?.isVideoMirrored = cameraFacing == "front"
+    // Keep analysis frames unmirrored. React mirrors the overlay for the front camera,
+    // while the preview layer is mirrored visually below, avoiding a double flip.
+    output.connection(with: .video)?.isVideoMirrored = false
+    updatePreviewConnection()
     session.commitConfiguration()
 
     do {
@@ -184,6 +187,19 @@ final class ActiveSensePoseView: ExpoView {
     // Pick the requested physical camera, defaulting to front-facing.
     let position: AVCaptureDevice.Position = cameraFacing == "back" ? .back : .front
     return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
+  }
+
+  private func updatePreviewConnection() {
+    DispatchQueue.main.async { [weak self] in
+      guard let self, let connection = self.previewLayer?.connection else {
+        return
+      }
+      connection.videoOrientation = .portrait
+      if connection.isVideoMirroringSupported {
+        connection.automaticallyAdjustsVideoMirroring = false
+        connection.isVideoMirrored = self.cameraFacing == "front"
+      }
+    }
   }
 
   private func configurePoseLandmarker() throws {

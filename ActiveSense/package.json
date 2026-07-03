@@ -31,7 +31,8 @@
     "react-native-url-polyfill": "^3.0.0",
     "react-native-web": "^0.21.2",
     "react-native-webview": "13.16.1",
-    "three": "^0.184.0"
+    "three": "^0.184.0",
+    "three-ios": "npm:three@^0.162.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

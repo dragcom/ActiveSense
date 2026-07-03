@@ -1,6 +1,7 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import IosGlbAvatarView from './IosGlbAvatarView';
 import { AvatarProfileConfig, UserProfile, UserStats } from '../types';
 
 type AvatarShowcaseViewProps = {
@@ -10,6 +11,14 @@ type AvatarShowcaseViewProps = {
 };
 
 export default function AvatarShowcaseView({ avatarConfig }: AvatarShowcaseViewProps) {
+  if (Platform.OS === 'ios') {
+    return (
+      <View style={styles.container}>
+        <IosGlbAvatarView avatarConfig={avatarConfig} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={[styles.fallbackAvatar, { backgroundColor: avatarConfig.accentColor }]}>

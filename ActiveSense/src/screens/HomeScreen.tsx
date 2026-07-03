@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -129,7 +130,14 @@ export default function HomeScreen() {
         <LinearGradient colors={colors.gradient.primary} style={styles.header}>
           <View style={styles.headerTopRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.greeting}>Hi {profile?.name ?? 'ActiveSense'} 👋</Text>
+              {Platform.OS === 'ios' ? (
+                <View style={styles.greetingRow}>
+                  <Text style={styles.greeting}>Hi {profile?.name ?? 'ActiveSense'}</Text>
+                  <Feather name="smile" size={24} color="#fff" />
+                </View>
+              ) : (
+                <Text style={styles.greeting}>Hi {profile?.name ?? 'ActiveSense'} 👋</Text>
+              )}
               <Text style={styles.subGreeting}>Keep your streak alive with a quick session today.</Text>
             </View>
             <TouchableOpacity
@@ -284,6 +292,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 24,
   },
   greeting: { fontSize: 24, fontWeight: '700', color: '#fff' },
+  greetingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   headerTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   settingsButton: {
     width: 48,

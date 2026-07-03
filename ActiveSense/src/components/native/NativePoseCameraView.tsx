@@ -29,7 +29,8 @@ export type NativePoseCameraViewProps = ViewProps & {
 let NativePoseCamera: React.ComponentType<NativePoseCameraViewProps> | null = null;
 let didTryResolveNativePoseCamera = false;
 
-// Expo may expose an adapter name even when the native view config is missing.
+// Android keeps the previous Expo view-config guard; iOS resolves directly because
+// the global adapter can be absent even when the local Expo module is linked.
 const hasNativePoseViewConfig = () => {
   const expoGlobal = (globalThis as unknown as {
     expo?: { getViewConfig?: (moduleName: string, viewName?: string) => unknown };
@@ -43,7 +44,7 @@ const resolveNativePoseCamera = () => {
     return NativePoseCamera;
   }
   didTryResolveNativePoseCamera = true;
-  if (!hasNativePoseViewConfig()) {
+  if (Platform.OS === 'android' && !hasNativePoseViewConfig()) {
     NativePoseCamera = null;
     return NativePoseCamera;
   }

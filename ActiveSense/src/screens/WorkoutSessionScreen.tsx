@@ -32,6 +32,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const [posePrediction, setPosePrediction] = useState<PoseClassification | null>(null);
   const [squatFeedback, setSquatFeedback] = useState<string | null>(null);
   const [isSavingResult, setIsSavingResult] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const [sessionAvatar, setSessionAvatar] = useState<AvatarProfileConfig>(defaultAvatarConfig);
   const poseClassifierRef = useRef<ReturnType<typeof createPoseClassifier> | null>(null);
   // Refs hold timing flags so camera frames do not trigger extra renders.
@@ -42,6 +43,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const lastSpokenAtRef = useRef(0);
   const spokenCueTimesRef = useRef<Record<string, number>>({});
   const squatPhaseRef = useRef<'ready' | 'down'>('ready');
+  const closingRef = useRef(false);
 
   const currentEx = exercises[currentExercise];
   const targetReps = currentEx ? currentEx.sets * currentEx.reps : 1;
@@ -70,7 +72,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   }, []);
 
   const speakWorkoutCue = useCallback((text: string, minIntervalMs = 6000, interrupt = false) => {
-    if (!soundEnabled) {
+    if (!soundEnabled || closingRef.current) {
       return;
     }
     const now = Date.now();
@@ -117,6 +119,15 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
     }
   }, [soundEnabled]);
 
+  useEffect(() => () => {
+    closingRef.current = true;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.speechSynthesis?.cancel();
+      return;
+    }
+    Speech.stop();
+  }, []);
+
   useEffect(() => {
     let mounted = true;
     // Load the selected workout's exercises and train the pose classifier once.
@@ -147,6 +158,9 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   }, [route.params?.workoutId]);
 
   const handleLandmarks = useCallback((landmarks: PoseLandmark[]) => {
+    if (closingRef.current) {
+      return;
+    }
     // This callback receives 33-point pose frames from web or native camera preview.
     if (poseCountRef.current !== landmarks.length) {
       poseCountRef.current = landmarks.length;
@@ -183,7 +197,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
       speakWorkoutCue(nextSquatFeedback, 7000);
     }
 
-    if (!currentEx || isPaused) {
+    if (!currentEx || isPaused || isClosing) {
       return;
     }
 
@@ -237,7 +251,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
       }
       return next;
     });
-  }, [currentEx, isPaused, speakWorkoutCue, targetReps]);
+  }, [currentEx, isClosing, isPaused, speakWorkoutCue, targetReps]);
 
   useEffect(() => {
     // New exercises start ready to count the next valid rep.
@@ -260,6 +274,32 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
       return next;
     });
   };
+
+  const handleClose = useCallback(() => {
+    if (closingRef.current) {
+      return;
+    }
+    closingRef.current = true;
+    setIsClosing(true);
+    setIsPaused(true);
+    poseClassifierRef.current = null;
+    setPosePrediction(null);
+    setSquatFeedback(null);
+    setPosePointCount(0);
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.speechSynthesis?.cancel();
+    } else {
+      Speech.stop();
+    }
+
+    requestAnimationFrame(() => {
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+        return;
+      }
+      navigation.replace('Main');
+    });
+  }, [navigation]);
 
   const handleNext = async () => {
     // Advance between exercises or save the final workout result.
@@ -325,13 +365,15 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
     <View style={styles.container}>
       {/* The camera preview is the full-screen underlay behind all workout controls. */}
       <View style={styles.cameraUnderlay}>
-        <PoseCameraPreview
-          enabled={!isPaused}
-          onLandmarks={handleLandmarks}
-          overlayMode="avatar"
-          avatarUrl={getAvatarRenderUri(sessionAvatar)}
-          presentation="fill"
-        />
+        {!isClosing && (
+          <PoseCameraPreview
+            enabled={!isPaused}
+            onLandmarks={handleLandmarks}
+            overlayMode="avatar"
+            avatarUrl={getAvatarRenderUri(sessionAvatar)}
+            presentation="fill"
+          />
+        )}
       </View>
 
       <LinearGradient
@@ -348,7 +390,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
       {/* Top overlay shows the current exercise and live feedback prompt. */}
       <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
+          <TouchableOpacity disabled={isClosing} onPress={handleClose} style={styles.iconButton}>
             <Feather name="x" size={24} color="#fff" />
           </TouchableOpacity>
           <View style={styles.pointsPill}>

@@ -1,20 +1,46 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
+import IosGlbAvatarView from './IosGlbAvatarView';
 import PoseSkeletonOverlay from './PoseSkeletonOverlay';
+import { defaultAvatarConfig } from '../data/avatars';
 import { PoseLandmark } from '../types';
 
-// Native avatar rendering falls back to the original landmark skeleton for now.
+// Native avatar rendering uses the iOS GLB renderer where available.
 type AvatarPoseOverlayProps = {
   landmarks: PoseLandmark[];
-  // avatarUrl is used by the web Three.js overlay; native keeps the skeleton until GLB rendering lands.
   avatarUrl?: string;
   mirrored?: boolean;
 };
 
 export default function AvatarPoseOverlay({
   landmarks,
+  avatarUrl,
   mirrored = true,
 }: AvatarPoseOverlayProps) {
+  if (Platform.OS === 'ios') {
+    const avatarConfig = {
+      ...defaultAvatarConfig,
+      avatarUrl: avatarUrl || defaultAvatarConfig.avatarUrl,
+    };
+
+    return (
+      <View style={styles.overlay} pointerEvents="none">
+        <IosGlbAvatarView
+          avatarConfig={avatarConfig}
+          autoRotate={false}
+          landmarks={landmarks}
+          showStatus={false}
+          transparent
+        />
+        <View style={styles.statusPill}>
+          <Text style={styles.statusText}>
+            {landmarks.length === 33 ? 'Avatar tracking camera pose' : 'Avatar waiting for full pose'}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.overlay} pointerEvents="none">
       <PoseSkeletonOverlay landmarks={landmarks} mirrored={mirrored} />
