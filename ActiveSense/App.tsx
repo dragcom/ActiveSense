@@ -4,6 +4,7 @@ import AppNavigator from './src/navigation/AppNavigator';
 import { hasCompletedOnboarding } from './src/services/storage';
 import { colors } from './src/theme/colors';
 import { RootStackParamList } from './src/navigation/types';
+import { NavigationBar } from 'expo-navigation-bar';
 
 // App is the root component that decides whether to show onboarding or the main tabs.
 export default function App() {
@@ -36,6 +37,12 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      NavigationBar.setHidden(true);
+    }
+  }, []);
+  
   useEffect(() => {
     // Run once when the app opens so navigation starts in the right place.
     loadOnboardingState();

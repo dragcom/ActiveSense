@@ -73,8 +73,9 @@ class ActiveSensePoseView(
     previewView.layout(0, 0, right - left, bottom - top)
   }
 
-  fun setEnabled(nextEnabled: Boolean) {
+  override fun setEnabled(nextEnabled: Boolean) {
     // React toggles tracking by binding or unbinding CameraX.
+    super.setEnabled(enabled)
     enabled = nextEnabled
     if (enabled) {
       startCameraIfAllowed()

@@ -8,7 +8,7 @@ export type AvatarCreatorMessage =
   | { type: 'SAVED_AVATAR'; data: AvatarProfileConfig }
   | { type: 'CAPTURE_SCREENSHOT'; data: string };
 
-const DEFAULT_AVATAR_CREATOR_URL = 'http://activesense.dpdns.org:5173';
+const DEFAULT_AVATAR_CREATOR_URL = 'https://activesense.dpdns.org';
 
 const modeQuery: Record<AvatarCreatorMode, string> = {
   home: '',
