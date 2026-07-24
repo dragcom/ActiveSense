@@ -25,13 +25,6 @@ import {
 } from './fallbackData';
 import { hasSupabaseConfig, requireSupabase } from './supabase';
 
-// These row types mirror Supabase column names before mapping them for React Native screens.
-type WorkoutCategoryRow = {
-  id: number;
-  name: string;
-  sort_order: number;
-};
-
 // WorkoutRow is the exact database shape returned by the workouts table.
 type WorkoutRow = {
   id: number;
@@ -47,6 +40,7 @@ type WorkoutRow = {
   intensity: string;
   recommended_min_age?: number | null;
   recommended_max_age?: number | null;
+  is_active?: boolean;
   workout_categories?: { name: string } | null;
 };
 
@@ -64,10 +58,16 @@ type WorkoutExerciseRow = {
   feedback_prompt: string;
 };
 
-// The seed table stores onboarding choices as field_name/label pairs.
-type OnboardingChoiceRow = {
-  field_name: 'fitness_level' | 'preferred_intensity';
+type AppOptionRow = {
+  id: number;
   label: string;
+  value?: string | null;
+  metadata?: Record<string, unknown> | null;
+  app_option_groups?: {
+    key: string;
+    label: string;
+    group_type: 'onboarding' | 'medical_condition' | 'profile';
+  } | null;
   sort_order: number;
 };
 
@@ -94,11 +94,9 @@ type RewardVoucherRow = {
 // Profile menu rows drive the Settings-style list on the Profile screen.
 type ProfileMenuRow = {
   id: number;
-  icon: string;
   label: string;
-  badge?: string | null;
-  action_key?: ProfileMenuItem['actionKey'] | null;
-  color: string;
+  value?: ProfileMenuItem['actionKey'] | null;
+  metadata?: Record<string, unknown> | null;
   sort_order: number;
 };
 
@@ -118,14 +116,9 @@ type InfoPageRow = {
 };
 
 const validPoseLabels: PoseTrainingSample['label'][] = [
-  'standing',
-  'seated',
   'squat',
   'pushup',
-  'situp',
-  'arm-raise',
-  'side-leg-lift',
-  'stretch',
+  'lunge',
 ];
 
 // The pose classifier currently extracts ten numeric features from each 33-point frame.
@@ -134,6 +127,11 @@ const expectedPoseFeatureCount = 10;
 // Catalog screens should not crash if a bad color lands in Supabase.
 const safeColor = (value: string | null | undefined, fallback: string) =>
   /^#[0-9A-Fa-f]{6}$/.test(value ?? '') ? (value as string) : fallback;
+
+const metadataString = (metadata: Record<string, unknown> | null | undefined, key: string) => {
+  const value = metadata?.[key];
+  return typeof value === 'string' ? value : undefined;
+};
 
 // Database requirement names are snake_case, while the app state is camelCase.
 const statKeyFromDatabase = (value: string): keyof UserStats => {
@@ -149,7 +147,7 @@ const statKeyFromDatabase = (value: string): keyof UserStats => {
   return 'totalWorkouts';
 };
 
-// Missing Supabase tables should not make the iOS app impossible to inspect.
+// Local fallback is only for prototype runs without Supabase env. Configured builds must use Supabase data.
 const readOrFallback = async <T>(label: string, fallback: T, read: () => Promise<T>) => {
   if (!hasSupabaseConfig) {
     return fallback;
@@ -157,8 +155,8 @@ const readOrFallback = async <T>(label: string, fallback: T, read: () => Promise
   try {
     return await read();
   } catch (error) {
-    console.warn(`Using local fallback for ${label}.`, error);
-    return fallback;
+    console.error(`Unable to load ${label} from Supabase.`, error);
+    throw error;
   }
 };
 
@@ -248,17 +246,31 @@ const assertNoError = (error: unknown) => {
   }
 };
 
+const requireRows = <T>(label: string, rows: T[]) => {
+  if (!rows.length) {
+    throw new Error(`Supabase returned no ${label}. Run db/seed.sql for the ActiveSense project.`);
+  }
+  return rows;
+};
+
 // db is the app's database facade; screens call this instead of talking to Supabase directly.
 export const db = {
   // Return filter chips for the Workouts screen from the categories table.
   async getWorkoutCategories() {
     return readOrFallback('workout categories', fallbackWorkoutCategories, async () => {
       const { data, error } = await requireSupabase()
-        .from('workout_categories')
-        .select('id, name, sort_order')
-        .order('sort_order', { ascending: true });
+        .from('workouts')
+        .select('workout_categories(name)')
+        .eq('is_active', true)
+        .order('id', { ascending: true });
       assertNoError(error);
-      const categories = ((data as WorkoutCategoryRow[] | null) ?? []).map((category) => category.name);
+      const categories = Array.from(
+        new Set(
+          ((data as Array<{ workout_categories?: { name: string } | null }> | null) ?? [])
+            .map((workout) => workout.workout_categories?.name)
+            .filter((name): name is string => Boolean(name)),
+        ),
+      );
       return ['All', ...categories];
     });
   },
@@ -268,11 +280,12 @@ export const db = {
     return readOrFallback('workouts', fallbackWorkouts, async () => {
       const { data, error } = await requireSupabase()
         .from('workouts')
-        .select('id, title, duration_minutes, difficulty, calories, category_id, emoji, gradient_start, gradient_end, description, intensity, recommended_min_age, recommended_max_age, workout_categories(name)')
+        .select('id, title, duration_minutes, difficulty, calories, category_id, emoji, gradient_start, gradient_end, description, intensity, recommended_min_age, recommended_max_age, is_active, workout_categories(name)')
+        .eq('is_active', true)
         .order('id', { ascending: true });
       assertNoError(error);
       const workouts = ((data as WorkoutRow[] | null) ?? []).map(toWorkout);
-      return workouts.length ? workouts : fallbackWorkouts;
+      return requireRows('workouts', workouts);
     });
   },
 
@@ -281,14 +294,18 @@ export const db = {
     return readOrFallback('recommended workout', fallbackRecommendedWorkout(profile), async () => {
       const { data, error } = await requireSupabase()
         .from('workouts')
-        .select('id, title, duration_minutes, difficulty, calories, category_id, emoji, gradient_start, gradient_end, description, intensity, recommended_min_age, recommended_max_age, workout_categories(name)')
+        .select('id, title, duration_minutes, difficulty, calories, category_id, emoji, gradient_start, gradient_end, description, intensity, recommended_min_age, recommended_max_age, is_active, workout_categories(name)')
+        .eq('is_active', true)
         .order('id', { ascending: true });
       assertNoError(error);
       const rows = (data as WorkoutRow[] | null) ?? [];
       const [first] = [...rows].sort(
         (a, b) => rankWorkoutForProfile(profile)(b) - rankWorkoutForProfile(profile)(a),
       );
-      return first ? toWorkout(first) : fallbackRecommendedWorkout(profile);
+      if (!first) {
+        throw new Error('Supabase returned no recommended workout. Run db/seed.sql for the ActiveSense project.');
+      }
+      return toWorkout(first);
     });
   },
 
@@ -328,7 +345,7 @@ export const db = {
         .order('sort_order', { ascending: true });
       assertNoError(error);
       const exercises = ((data as WorkoutExerciseRow[] | null) ?? []).map(toWorkoutExercise);
-      return exercises.length ? exercises : fallbackExercises;
+      return requireRows('workout exercises', exercises);
     });
   },
 
@@ -352,7 +369,7 @@ export const db = {
           label: sample.label,
           features: sample.features,
         }));
-      return samples.length ? samples : fallbackPoseTrainingSamples;
+      return requireRows('pose training samples', samples);
     });
   },
 
@@ -372,7 +389,7 @@ export const db = {
         emoji: voucher.emoji,
         category: voucher.category,
       }));
-      return vouchers.length ? vouchers : fallbackRewardVouchers;
+      return requireRows('reward vouchers', vouchers);
     });
   },
 
@@ -385,7 +402,7 @@ export const db = {
         .order('sort_order', { ascending: true });
       assertNoError(error);
       const achievements = ((data as AchievementRow[] | null) ?? []).map((achievement) => toAchievement(achievement, stats));
-      return achievements.length ? achievements : fallbackAchievementsForStats(stats);
+      return requireRows('achievements', achievements);
     });
   },
 
@@ -395,28 +412,33 @@ export const db = {
       const client = requireSupabase();
       const [{ data: choices, error: choicesError }, { data: medicalOptions, error: medicalError }] = await Promise.all([
         client
-          .from('onboarding_choices')
-          .select('field_name, label, sort_order')
+          .from('app_options')
+          .select('id, label, value, metadata, sort_order, app_option_groups!inner(key, label, group_type)')
+          .eq('app_option_groups.group_type', 'onboarding')
           .order('sort_order', { ascending: true }),
         client
-          .from('medical_condition_options')
-          .select('id, category, label, sort_order')
+          .from('app_options')
+          .select('id, label, value, metadata, sort_order, app_option_groups!inner(key, label, group_type)')
+          .eq('app_option_groups.group_type', 'medical_condition')
           .order('sort_order', { ascending: true }),
       ]);
       assertNoError(choicesError);
       assertNoError(medicalError);
 
-      const rows = (choices as OnboardingChoiceRow[] | null) ?? [];
+      const rows = (choices as AppOptionRow[] | null) ?? [];
       const result = {
-        fitnessLevels: rows.filter((choice) => choice.field_name === 'fitness_level').map((choice) => choice.label),
-        intensityLevels: rows.filter((choice) => choice.field_name === 'preferred_intensity').map((choice) => choice.label),
-        medicalConditionOptions: ((medicalOptions as Array<{ id: number; category: string; label: string }> | null) ?? []).map((option) => ({
+        fitnessLevels: rows.filter((choice) => choice.app_option_groups?.key === 'fitness_level').map((choice) => choice.label),
+        intensityLevels: rows.filter((choice) => choice.app_option_groups?.key === 'preferred_intensity').map((choice) => choice.label),
+        medicalConditionOptions: ((medicalOptions as AppOptionRow[] | null) ?? []).map((option) => ({
           id: option.id,
-          category: option.category,
+          category: option.app_option_groups?.label ?? 'Other',
           label: option.label,
         })),
       };
-      return result.fitnessLevels.length && result.intensityLevels.length ? result : fallbackOnboardingChoices;
+      if (!result.fitnessLevels.length || !result.intensityLevels.length) {
+        throw new Error('Supabase returned incomplete onboarding choices. Run db/seed.sql for the ActiveSense project.');
+      }
+      return result;
     });
   },
 
@@ -424,12 +446,13 @@ export const db = {
   async getProfileGoals() {
     return readOrFallback('profile goals', fallbackProfileGoals, async () => {
       const { data, error } = await requireSupabase()
-        .from('profile_goals')
-        .select('label, sort_order')
+        .from('app_options')
+        .select('label, sort_order, app_option_groups!inner(key)')
+        .eq('app_option_groups.key', 'profile_goals')
         .order('sort_order', { ascending: true });
       assertNoError(error);
       const goals = ((data as Array<{ label: string }> | null) ?? []).map((goal) => goal.label);
-      return goals.length ? goals : fallbackProfileGoals;
+      return requireRows('profile goals', goals);
     });
   },
 
@@ -437,19 +460,20 @@ export const db = {
   async getProfileMenuItems() {
     return readOrFallback('profile menu', fallbackProfileMenuItems, async () => {
       const { data, error } = await requireSupabase()
-        .from('profile_menu_items')
-        .select('id, icon, label, badge, action_key, color, sort_order')
+        .from('app_options')
+        .select('id, label, value, metadata, sort_order, app_option_groups!inner(key)')
+        .eq('app_option_groups.key', 'profile_menu_items')
         .order('sort_order', { ascending: true });
       assertNoError(error);
       const menu = ((data as ProfileMenuRow[] | null) ?? []).map((item) => ({
         id: item.id,
-        icon: item.icon,
+        icon: metadataString(item.metadata, 'icon') ?? 'settings',
         label: item.label,
-        badge: item.badge ?? undefined,
-        actionKey: item.action_key ?? undefined,
-        color: safeColor(item.color, '#14B8A6'),
+        badge: metadataString(item.metadata, 'badge'),
+        actionKey: item.value ?? undefined,
+        color: safeColor(metadataString(item.metadata, 'color'), '#14B8A6'),
       }));
-      return menu.length ? menu : fallbackProfileMenuItems;
+      return requireRows('profile menu items', menu);
     });
   },
 
@@ -469,7 +493,7 @@ export const db = {
     });
   },
 
-  // Profile and legal links resolve their title, icon, and body from the info_pages table.
+  // Profile and legal links resolve their title, icon, and body from app_pages.
   async getInfoPage(actionKey: string) {
     const fallback = fallbackInfoPages[actionKey] ?? {
       title: 'Information',
@@ -478,9 +502,10 @@ export const db = {
     };
     return readOrFallback('info page', fallback, async () => {
       const { data, error } = await requireSupabase()
-        .from('info_pages')
+        .from('app_pages')
         .select('action_key, title, icon, body')
         .eq('action_key', actionKey)
+        .eq('page_type', 'info')
         .maybeSingle();
       assertNoError(error);
       const page = data as InfoPageRow | null;

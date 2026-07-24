@@ -44,7 +44,7 @@ export default function LoginScreen({ navigation }: Props) {
 
       const profile = await getUserProfile();
       if (!profile) {
-        Alert.alert('Profile not found', 'Please complete signup before logging in.');
+        navigation.reset({ index: 0, routes: [{ name: 'Onboarding', params: { mode: 'edit' } }] });
         return;
       }
       await saveUserProfile(profile);

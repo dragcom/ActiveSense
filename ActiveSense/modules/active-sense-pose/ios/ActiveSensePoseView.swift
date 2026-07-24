@@ -19,6 +19,8 @@ final class ActiveSensePoseView: ExpoView {
   private var isConfigured = false
   private var isRunning = false
   private var lastInferenceTime = CACurrentMediaTime()
+  private var lastFrameWidth = 0
+  private var lastFrameHeight = 0
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -46,6 +48,7 @@ final class ActiveSensePoseView: ExpoView {
     super.layoutSubviews()
     // Keep the native camera layer aligned after rotations or layout changes.
     previewLayer?.frame = bounds
+    updatePreviewConnection()
   }
 
   func setEnabled(_ enabled: Bool) {
@@ -166,6 +169,7 @@ final class ActiveSensePoseView: ExpoView {
 
     session.addOutput(output)
     output.connection(with: .video)?.videoOrientation = .portrait
+    output.connection(with: .video)?.automaticallyAdjustsVideoMirroring = false
     // Keep analysis frames unmirrored. React mirrors the overlay for the front camera,
     // while the preview layer is mirrored visually below, avoiding a double flip.
     output.connection(with: .video)?.isVideoMirrored = false
@@ -256,6 +260,13 @@ extension ActiveSensePoseView: AVCaptureVideoDataOutputSampleBufferDelegate {
     }
     lastInferenceTime = now
 
+    if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+      let width = CVPixelBufferGetWidth(pixelBuffer)
+      let height = CVPixelBufferGetHeight(pixelBuffer)
+      lastFrameWidth = min(width, height)
+      lastFrameHeight = max(width, height)
+    }
+
     let timestamp = Int(CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds * 1000)
     do {
       // Convert the camera frame into a MediaPipe image and run async detection.
@@ -297,7 +308,9 @@ extension ActiveSensePoseView: PoseLandmarkerLiveStreamDelegate {
       // Emit the latest pose frame to React Native.
       self?.onLandmarks([
         "landmarks": landmarks,
-        "timestamp": timestampInMilliseconds
+        "timestamp": timestampInMilliseconds,
+        "frameWidth": self?.lastFrameWidth ?? 0,
+        "frameHeight": self?.lastFrameHeight ?? 0
       ])
     }
   }

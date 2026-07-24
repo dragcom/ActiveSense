@@ -45,12 +45,38 @@ export const Avatar = ({ ...props }) => {
   const setDownload = useConfiguratorStore((state) => state.setDownload);
   
   const latestJoints = useRef(null);
+  const latestPoseMeta = useRef({ mirrored: false });
   const frameCounter = useRef(0);
   const baseGroupPosition = useRef(new THREE.Vector3());
   const baseGroupRotation = useRef(new THREE.Euler());
   const liveGroupPosition = useRef(new THREE.Vector3(0, 0.5, 0.02));
   const liveGroupRotation = useRef(new THREE.Euler(-0.02, 0, 0));
   const turnTargetRef = useRef(0);
+
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+  const landmarkVisible = (landmark, threshold = 0.25) =>
+    !!landmark && (landmark.visibility ?? 1) > threshold;
+
+  const midpoint = (a, b) => ({
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+    z: ((a.z ?? 0) + (b.z ?? 0)) / 2,
+  });
+
+  const getBodyPoseMetrics = (joints) => {
+    const hasShoulders = landmarkVisible(joints?.[MP.L_SHOULDER]) && landmarkVisible(joints?.[MP.R_SHOULDER]);
+    const hasHips = landmarkVisible(joints?.[MP.L_HIP]) && landmarkVisible(joints?.[MP.R_HIP]);
+    if (!hasShoulders || !hasHips) {
+      return null;
+    }
+
+    const shoulderMid = midpoint(joints[MP.L_SHOULDER], joints[MP.R_SHOULDER]);
+    const hipMid = midpoint(joints[MP.L_HIP], joints[MP.R_HIP]);
+    const bodyAngle = Math.atan2(shoulderMid.x - hipMid.x, hipMid.y - shoulderMid.y);
+    const isFloorPose = Math.abs(bodyAngle) > 0.95;
+    return { hipMid, bodyAngle, isFloorPose };
+  };
 
   // All 33-point bone tracking for complete body mirroring
   const bonesRef = useRef({
@@ -180,6 +206,7 @@ export const Avatar = ({ ...props }) => {
       const parsed = typeof data === 'string' ? JSON.parse(data) : data;
       if (parsed?.type === 'LIVE_POSE') {
         latestJoints.current = parsed.joints;
+        latestPoseMeta.current = { mirrored: Boolean(parsed.mirrored) };
         if (Math.random() < 0.01) {
           console.log(`[Avatar WebView] Webview client caught full array payload via bridge!`);
         }
@@ -297,23 +324,29 @@ export const Avatar = ({ ...props }) => {
       const bones = bonesRef.current;
       const isLiveMode = new URLSearchParams(window.location.search).get('mode') === 'live';
 
-      // --- UNRESTRICTED POSITION TRACKING (WALKING, JUMPING, CROUCHING) ---
-      if (isLiveMode && latestJoints.current?.[MP.L_HIP] && latestJoints.current?.[MP.R_HIP]) {
-        const leftHip = latestJoints.current[MP.L_HIP];
-        const rightHip = latestJoints.current[MP.R_HIP];
-
-        // Midpoint tracking calculation
-        const hipX = (leftHip.x + rightHip.x) / 2;
-        const hipY = (leftHip.y + rightHip.y) / 2;
-        const hipZ = (leftHip.z + rightHip.z) / 2;
-
-        // Configuration values - keep avatar centered horizontally, allow vertical movement only
-        const scaleFactorY = 1.2;
-
-        // Keep avatar centered on X and Z, only track vertical movement for crouch/jump
-        liveGroupPosition.current.x = 0;
-        liveGroupPosition.current.y = 0.5 + (0.5 - hipY) * scaleFactorY;
-        liveGroupPosition.current.z = 0;
+      // --- LIVE BODY PLANE TRACKING FOR SQUATS AND FLOOR PUSH-UPS ---
+      if (isLiveMode && latestJoints.current) {
+        const bodyMetrics = getBodyPoseMetrics(latestJoints.current);
+        if (bodyMetrics) {
+          const { hipMid, bodyAngle, isFloorPose } = bodyMetrics;
+          const displayRoll = latestPoseMeta.current.mirrored ? -bodyAngle : bodyAngle;
+          liveGroupPosition.current.x = 0;
+          liveGroupPosition.current.y = isFloorPose
+            ? 0.2 + (0.5 - hipMid.y) * 0.35
+            : 0.5 + (0.5 - hipMid.y) * 1.2;
+          liveGroupPosition.current.z = 0;
+          liveGroupRotation.current.x = isFloorPose ? -0.08 : -0.02;
+          liveGroupRotation.current.z = isFloorPose ? clamp(displayRoll, -1.45, 1.45) : clamp(displayRoll * 0.18, -0.22, 0.22);
+        } else if (latestJoints.current?.[MP.L_HIP] && latestJoints.current?.[MP.R_HIP]) {
+          const leftHip = latestJoints.current[MP.L_HIP];
+          const rightHip = latestJoints.current[MP.R_HIP];
+          const hipY = (leftHip.y + rightHip.y) / 2;
+          liveGroupPosition.current.x = 0;
+          liveGroupPosition.current.y = 0.5 + (0.5 - hipY) * 1.2;
+          liveGroupPosition.current.z = 0;
+          liveGroupRotation.current.x = -0.02;
+          liveGroupRotation.current.z = 0;
+        }
       }
 
       if (group.current) {

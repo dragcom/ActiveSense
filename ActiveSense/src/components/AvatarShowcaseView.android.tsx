@@ -5,6 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { defaultStats, getStats, getUserProfile } from '../services/storage';
 import { AvatarProfileConfig, UserProfile, UserStats } from '../types';
+import { getAvatarCreatorUri } from '../services/avatarCreatorBridge';
 
 const defaultAvatarConfig: AvatarProfileConfig = {
   optionId: 'default',
@@ -21,7 +22,7 @@ export default function AvatarShowcaseView() {
   const [loading, setLoading] = useState(true);
   const [isWebReady, setIsWebReady] = useState(false);
   const [failed, setFailed] = useState(false);
-  const webViewUrl = 'https://activesense.dpdns.org';
+  const webViewUrl = getAvatarCreatorUri('home');
 
   useEffect(() => {
     let mounted = true;

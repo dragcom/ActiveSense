@@ -106,7 +106,7 @@ export default function HomeScreen() {
         <View style={styles.emptyState}>
           <Feather name="refresh-cw" size={28} color={colors.primary.teal} />
           <Text style={styles.emptyTitle}>Home data unavailable</Text>
-          <Text style={styles.emptyCopy}>Check Supabase setup or try again with the local fallback catalog.</Text>
+          <Text style={styles.emptyCopy}>Check Supabase setup and retry.</Text>
           <TouchableOpacity
             style={styles.emptyButton}
             onPress={() => {

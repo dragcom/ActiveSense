@@ -33,17 +33,66 @@ const parseJSON = <T>(value: string, context: string): T => {
 const normalizePrivacyMode = (privacyMode?: string): UserProfile['privacyMode'] =>
   privacyMode?.toLowerCase() === 'camera' ? 'Camera' : 'Avatar';
 
-const isMissingAvatarConfigColumn = (error: any) =>
-  Boolean(error?.message?.includes('avatar_config') || error?.details?.includes('avatar_config'));
-
 const getLocalDateKey = (date: Date) => date.toISOString().slice(0, 10);
 
+const readMedicalConditionLabels = async (userId: string): Promise<string[]> => {
+  if (!supabase) {
+    return ['None'];
+  }
+  const { data, error } = await supabase
+    .from('user_profile_medical_conditions')
+    .select('app_options(label)')
+    .eq('profile_id', userId);
+  if (error) {
+    throw error;
+  }
+  const labels = (data ?? [])
+    .map((row: any) => row.app_options?.label)
+    .filter((label: unknown): label is string => typeof label === 'string');
+  return labels.length ? labels : ['None'];
+};
+
+const saveMedicalConditionLabels = async (userId: string, labels: string[]) => {
+  if (!supabase) {
+    return;
+  }
+  const normalizedLabels = labels.includes('None') ? ['None'] : labels;
+  const { data: options, error: optionsError } = await supabase
+    .from('app_options')
+    .select('id, label, app_option_groups!inner(group_type)')
+    .eq('app_option_groups.group_type', 'medical_condition')
+    .in('label', normalizedLabels);
+  if (optionsError) {
+    throw optionsError;
+  }
+
+  const optionIds = ((options as Array<{ id: number }> | null) ?? []).map((option) => option.id);
+  const { error: deleteError } = await supabase
+    .from('user_profile_medical_conditions')
+    .delete()
+    .eq('profile_id', userId);
+  if (deleteError) {
+    throw deleteError;
+  }
+
+  if (!optionIds.length) {
+    return;
+  }
+
+  const { error: insertError } = await supabase
+    .from('user_profile_medical_conditions')
+    .insert(optionIds.map((optionId) => ({ profile_id: userId, option_id: optionId })));
+  if (insertError) {
+    throw insertError;
+  }
+};
+
 // Convert a Supabase user_profiles row into the app's UserProfile type.
-const toUserProfile = (row: any): UserProfile => ({
+const toUserProfile = (row: any, medicalConditions: string[] = ['None']): UserProfile => ({
   name: row.display_name ?? '',
   age: row.age ?? 0,
   fitnessLevel: row.fitness_level ?? 'Beginner',
-  medicalConditions: row.medical_conditions ?? ['None'],
+  medicalConditions,
   preferredIntensity: row.preferred_intensity ?? 'Low',
   createdAt: row.created_at ?? new Date().toISOString(),
   privacyMode: normalizePrivacyMode(row.privacy_mode),
@@ -81,41 +130,17 @@ export const saveUserProfile = async (profile: UserProfile) => {
       age: profile.age,
       fitness_level: profile.fitnessLevel,
       preferred_intensity: profile.preferredIntensity,
-      medical_conditions: profile.medicalConditions,
       privacy_mode: (profile.privacyMode ?? 'Avatar').toLowerCase(),
       avatar_config: avatar,
       updated_at: new Date().toISOString(),
     };
-    let { error: profileError } = await supabase.from('user_profiles').upsert(profilePayload);
-    if (isMissingAvatarConfigColumn(profileError)) {
-      // Remote databases from older prototypes may not have avatar_config yet; local storage still keeps it.
-      const legacyProfilePayload = {
-        id: profilePayload.id,
-        display_name: profilePayload.display_name,
-        age: profilePayload.age,
-        fitness_level: profilePayload.fitness_level,
-        preferred_intensity: profilePayload.preferred_intensity,
-        medical_conditions: profilePayload.medical_conditions,
-        privacy_mode: profilePayload.privacy_mode,
-        updated_at: profilePayload.updated_at,
-      };
-      const retry = await supabase.from('user_profiles').upsert(legacyProfilePayload);
-      profileError = retry.error;
-    }
+    const { error: profileError } = await supabase.from('user_profiles').upsert(profilePayload);
     if (profileError) {
       throw profileError;
     }
+    await saveMedicalConditionLabels(userId, profile.medicalConditions);
 
-    // Ensure the stats row exists before workouts or redemptions try to update it.
-    const { error: statsError } = await supabase.from('user_stats').upsert({
-      user_id: userId,
-      healthpoints: defaultStats.healthpoints,
-      streak_days: defaultStats.streakDays,
-      total_workouts: defaultStats.totalWorkouts,
-    }, { onConflict: 'user_id', ignoreDuplicates: true });
-    if (statsError) {
-      throw statsError;
-    }
+    // Progress rows are created by RPC transactions, not directly by the mobile client.
   }
 };
 
@@ -124,28 +149,16 @@ export const getUserProfile = async (): Promise<UserProfile | null> => {
   // Prefer Supabase for authenticated users so profile edits sync across devices.
   const userId = await getCurrentSupabaseUserId();
   if (supabase && userId) {
-    const profileRead = await supabase
+    const { data, error } = await supabase
       .from('user_profiles')
-      .select('display_name, age, fitness_level, preferred_intensity, medical_conditions, privacy_mode, avatar_config, created_at')
+      .select('display_name, age, fitness_level, preferred_intensity, privacy_mode, avatar_config, created_at')
       .eq('id', userId)
       .maybeSingle();
-    let data: any = profileRead.data;
-    let error: any = profileRead.error;
-    if (isMissingAvatarConfigColumn(error)) {
-      // Keep older Supabase projects usable until db/schema.sql has been applied.
-      const retry = await supabase
-        .from('user_profiles')
-        .select('display_name, age, fitness_level, preferred_intensity, medical_conditions, privacy_mode, created_at')
-        .eq('id', userId)
-        .maybeSingle();
-      data = retry.data;
-      error = retry.error;
-    }
     if (error) {
       throw error;
     }
     if (data) {
-      return toUserProfile(data);
+      return toUserProfile(data, await readMedicalConditionLabels(userId));
     }
   }
 
@@ -215,20 +228,7 @@ export const getStats = async (): Promise<UserStats> => {
 
 // Store the latest Healthpoints, streak, and workout totals.
 export const saveStats = async (stats: UserStats) => {
-  // This method remains for local fallback screens; Supabase point changes should use RPCs.
-  const userId = await getCurrentSupabaseUserId();
-  if (supabase && userId) {
-    const { error } = await supabase.from('user_stats').upsert({
-      user_id: userId,
-      healthpoints: stats.healthpoints,
-      streak_days: stats.streakDays,
-      total_workouts: stats.totalWorkouts,
-      updated_at: new Date().toISOString(),
-    });
-    if (error) {
-      throw error;
-    }
-  }
+  // Supabase point changes must use RPCs; this is only the offline fallback cache.
   await AsyncStorage.setItem(USER_STATS_KEY, JSON.stringify(stats));
 };
 

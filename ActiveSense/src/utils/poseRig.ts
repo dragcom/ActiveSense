@@ -30,6 +30,9 @@ export type PoseRigState = {
 };
 
 type AvatarSide = 'left' | 'right';
+type PoseRigOptions = {
+  mirrored?: boolean;
+};
 
 // MediaPipe's standard pose connections define the original 33-point skeleton drawing.
 export const POSE_CONNECTIONS = [
@@ -347,7 +350,7 @@ const applySegmentRotation = (
   bone.updateMatrixWorld?.(true);
 };
 
-// The camera preview is mirrored, so the rig uses mirrored x coordinates to line up on screen.
+// Mirrored camera previews need flipped x coordinates so avatar joints line up on screen.
 const toMirroredLandmarks = (landmarks: PoseLandmark[]) =>
   landmarks.map((landmark) => ({ ...landmark, x: 1 - clampUnit(landmark.x), y: clampUnit(landmark.y) }));
 
@@ -359,6 +362,7 @@ export const updateAvatarPose = (
   rest: RestPose,
   landmarks: PoseLandmark[],
   state?: PoseRigState,
+  options: PoseRigOptions = {},
 ) => {
   const stableLandmarks = smoothLandmarks(state, landmarks);
 
@@ -371,7 +375,8 @@ export const updateAvatarPose = (
     return false;
   }
 
-  const rigLandmarks = toMirroredLandmarks(stableLandmarks);
+  const mirrored = options.mirrored ?? true;
+  const rigLandmarks = mirrored ? toMirroredLandmarks(stableLandmarks) : stableLandmarks;
   const {
     nose,
     leftEye,
@@ -540,26 +545,50 @@ export const updateAvatarPose = (
 
   root.updateMatrixWorld(true);
 
-  const avatarLeftArm = {
-    shoulder: rightShoulder,
-    elbow: rightElbow,
-    wrist: rightWrist,
-  };
-  const avatarRightArm = {
-    shoulder: leftShoulder,
-    elbow: leftElbow,
-    wrist: leftWrist,
-  };
-  const avatarLeftLeg = {
-    hip: rightHip,
-    knee: rightKnee,
-    ankle: rightAnkle,
-  };
-  const avatarRightLeg = {
-    hip: leftHip,
-    knee: leftKnee,
-    ankle: leftAnkle,
-  };
+  const avatarLeftArm = mirrored
+    ? {
+        shoulder: rightShoulder,
+        elbow: rightElbow,
+        wrist: rightWrist,
+      }
+    : {
+        shoulder: leftShoulder,
+        elbow: leftElbow,
+        wrist: leftWrist,
+      };
+  const avatarRightArm = mirrored
+    ? {
+        shoulder: leftShoulder,
+        elbow: leftElbow,
+        wrist: leftWrist,
+      }
+    : {
+        shoulder: rightShoulder,
+        elbow: rightElbow,
+        wrist: rightWrist,
+      };
+  const avatarLeftLeg = mirrored
+    ? {
+        hip: rightHip,
+        knee: rightKnee,
+        ankle: rightAnkle,
+      }
+    : {
+        hip: leftHip,
+        knee: leftKnee,
+        ankle: leftAnkle,
+      };
+  const avatarRightLeg = mirrored
+    ? {
+        hip: leftHip,
+        knee: leftKnee,
+        ankle: leftAnkle,
+      }
+    : {
+        hip: rightHip,
+        knee: rightKnee,
+        ankle: rightAnkle,
+      };
 
   if (isLandmarkVisible(rigLandmarks[avatarLeftArm.shoulder]) && isLandmarkVisible(rigLandmarks[avatarLeftArm.elbow])) {
     const upperDirection = bodyLocalDirection(

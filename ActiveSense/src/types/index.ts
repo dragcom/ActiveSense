@@ -71,14 +71,9 @@ export type PoseLandmark = {
 
 // PoseClassLabel names the exercise forms that the lightweight classifier can detect.
 export type PoseClassLabel =
-  | 'standing'
-  | 'seated'
   | 'squat'
   | 'pushup'
-  | 'situp'
-  | 'arm-raise'
-  | 'side-leg-lift'
-  | 'stretch';
+  | 'lunge';
 
 // PoseTrainingSample stores precomputed features for one known exercise pose.
 export type PoseTrainingSample = {
