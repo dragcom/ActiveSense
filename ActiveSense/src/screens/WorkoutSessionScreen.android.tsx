@@ -6,7 +6,7 @@ import { Feather } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Speech from 'expo-speech';
 import { addWorkoutResult } from '../services/storage';
-import PoseCameraPreview from '../components/PoseCameraPreview';
+import PoseCameraPreview from '../components/PoseCameraPreview.android';
 import { db } from '../services/database';
 import { colors } from '../theme/colors';
 import { RootStackParamList } from '../navigation/types';
@@ -15,13 +15,17 @@ import WebView, { WebViewMessageEvent } from 'react-native-webview';
 import { Camera } from 'expo-camera';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutSession'>;
+
 export interface Landmark {
   x: number;
   y: number;
   z: number;
   visibility: number;
+  screenX?: number;
+  screenY?: number;
 }
-const AVATAR_SOURCE = { uri: 'http://activesense.dpdns.org?mode=live' };
+
+const AVATAR_SOURCE = { uri: process.env.EXPO_PUBLIC_AVATAR_CREATOR_URL_LIVE };
 
 export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
@@ -88,17 +92,17 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   true;
 `;
 
-  // UNIFIED ONMESSAGE HANDLER (Fixes the duplicate error)
+  // UNIFIED ONMESSAGE HANDLER
   const onMessage = (event: WebViewMessageEvent) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       
       if (data.type === 'WEBVIEW_DIAGNOSTICS') {
-        console.log("============== 🛠️ WEBVIEW DIAGNOSTICS 🛠️ ==============");
-        console.log(`🔒 Is Secure Context?:          ${data.isSecureContext}`);
-        console.log(`📦 Has navigator.mediaDevices?: ${data.hasMediaDevices}`);
-        console.log(`📷 Has getUserMedia?:           ${data.hasGetUserMedia}`);
-        console.log(`🌐 Current Loaded Origin:       ${data.currentOrigin}`);
+        console.log("==============  WEBVIEW DIAGNOSTICS  ==============");
+        console.log(`Is Secure Context?:          ${data.isSecureContext}`);
+        console.log(`Has navigator.mediaDevices?: ${data.hasMediaDevices}`);
+        console.log(`Has getUserMedia?:           ${data.hasGetUserMedia}`);
+        console.log(`Current Loaded Origin:       ${data.currentOrigin}`);
         console.log("======================================================");
         return;
       }
@@ -165,11 +169,14 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
 
   const handleLandmarks = useCallback((landmarks: Landmark[]) => {
     if (isPaused || !currentEx || !isWebViewReady || !webViewRef.current) return;
+    
     const packedData = landmarks.map((lm) => ({
       x: lm.x,
       y: lm.y,
       z: lm.z,
-      visibility: lm.visibility ?? 1
+      visibility: lm.visibility ?? 1,
+      screenX: lm.screenX,
+      screenY: lm.screenY,
     }));
 
     const now = Date.now();
@@ -258,22 +265,32 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
         </LinearGradient>
 
         <View style={styles.avatarContainer}>
-          <View style={[styles.cameraView, !showCamera && { position: 'absolute', top: -10000, left: -10000 }]}>
-            <PoseCameraPreview enabled={!isPaused && hasPermission} onLandmarks={handleLandmarks} style={styles.cameraView} />
+          <View
+            pointerEvents={showCamera ? 'auto' : 'none'}
+            style={[styles.previewLayer, !showCamera && styles.hiddenLayer]}
+          >
+            <PoseCameraPreview
+              enabled={!isPaused && hasPermission}
+              onLandmarks={handleLandmarks}
+              style={styles.cameraView}
+            />
           </View>
 
-          <View style={[styles.cameraView, showCamera && { position: 'absolute', top: -10000, left: -10000 }]}>
+          <View
+            pointerEvents={showCamera ? 'none' : 'auto'}
+            style={[styles.previewLayer, showCamera && styles.hiddenLayer]}
+          >
             <WebView
               ref={webViewRef}
               source={AVATAR_SOURCE}
               onMessage={onMessage}
               scrollEnabled={false}
-              webviewDebuggingEnabled={true} 
+              webviewDebuggingEnabled={true}
               mediaCapturePermissionGrantType="grant"
-              allowsInlineMediaPlayback={true}
+              allowsInlineMediaPlayback
               mediaPlaybackRequiresUserAction={false}
-              javaScriptEnabled={true}
-              domStorageEnabled={true}
+              javaScriptEnabled
+              domStorageEnabled
               originWhitelist={['*']}
               injectedJavaScriptBeforeContentLoaded={INJECTED_LOG_BRIDGE}
               containerStyle={{ backgroundColor: 'transparent' }}
@@ -366,8 +383,6 @@ const styles = StyleSheet.create({
   feedbackText: { fontSize: 12, fontWeight: '600', color: '#fff' },
   pointsIndicator: { backgroundColor: '#FBBF24', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, flexDirection: 'row', alignItems: 'center', marginRight: 10 },
   pointsText: { fontSize: 11, fontWeight: '700', color: colors.text.primary },
-  avatarContainer: { flex: 1, backgroundColor: '#000', width: '100%', marginVertical: 4, alignItems: 'stretch', justifyContent: 'center', overflow: 'hidden' },
-  cameraView: { flex: 1, width: '100%', height: '100%', alignSelf: 'stretch' },
   controlPanel: { backgroundColor: 'rgba(31, 41, 55, 0.95)', marginHorizontal: 16, marginBottom: 12, padding: 10, borderRadius: 16, borderWidth: 1, borderColor: '#374151' },
   controlHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   exerciseName: { fontSize: 15, fontWeight: '700', color: '#fff' },
@@ -383,5 +398,25 @@ const styles = StyleSheet.create({
   staticLogButton: { backgroundColor: colors.primary.teal, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 8, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.primary.tealLight },
   staticLogTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   staticLogSubtitle: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
-  nextButtonAction: { paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }
+  nextButtonAction: { paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  avatarContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+    width: '100%',
+    marginVertical: 4,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  previewLayer: {
+    ...StyleSheet.absoluteFill,
+  },
+  hiddenLayer: {
+    opacity: 0,
+  },
+  cameraView: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    alignSelf: 'stretch',
+  },
 });

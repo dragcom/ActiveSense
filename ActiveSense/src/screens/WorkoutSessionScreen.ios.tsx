@@ -7,7 +7,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Speech from 'expo-speech';
 import { addWorkoutResult, getUserProfile } from '../services/storage';
 import { getAvatarRenderUri } from '../services/avatarAssetStorage';
-import PoseCameraPreview from '../components/PoseCameraPreview';
+import PoseCameraPreview from '../components/PoseCameraPreview.ios';
 import { db } from '../services/database';
 import { assessSquatTechnique, assessStandingPose, createPoseClassifier, formatPoseClass } from '../services/poseClassifier';
 import { defaultAvatarConfig, normalizeAvatarConfig } from '../data/avatars';
