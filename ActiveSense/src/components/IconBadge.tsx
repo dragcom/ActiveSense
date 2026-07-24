@@ -14,14 +14,6 @@ type IconBadgeProps = {
 
 // Workout and reward data still store simple emoji labels, so this maps them to icons.
 const iconMap: Record<string, FeatherName> = {
-  '🧘': 'wind',
-  '🪑': 'grid',
-  '🚶': 'navigation',
-  '🧠': 'cpu',
-  '⚖️': 'sliders',
-  '⚡': 'zap',
-  '🎯': 'target',
-  '🌙': 'moon',
   '🛒': 'shopping-cart',
   '🍔': 'coffee',
   '💊': 'plus-circle',
@@ -29,25 +21,17 @@ const iconMap: Record<string, FeatherName> = {
   '🔥': 'zap',
   '💯': 'award',
   '🏆': 'award',
-  'arm-raise': 'arrow-up-circle',
+  activity: 'activity',
   pushup: 'activity',
-  seated: 'grid',
-  'side-leg-lift': 'trending-up',
-  situp: 'repeat',
   squat: 'chevrons-down',
-  standing: 'user',
-  stretch: 'wind',
+  lunge: 'corner-down-right',
 };
 
 // Category names can also request icons when there is no direct emoji match.
 const categoryMap: Record<string, FeatherName> = {
-  Balance: 'sliders',
-  Cardio: 'heart',
-  Flexibility: 'wind',
   Food: 'coffee',
   Groceries: 'shopping-cart',
   Health: 'plus-circle',
-  Mindfulness: 'moon',
   Sports: 'activity',
   Strength: 'activity',
 };

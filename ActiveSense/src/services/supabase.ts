@@ -55,6 +55,9 @@ export const signUpWithPassword = async (email: string, password: string, displa
   if (error) {
     throw error;
   }
+  if (!data.session) {
+    throw new Error('Please confirm your email address, then log in to finish creating your ActiveSense profile.');
+  }
   return data;
 };
 

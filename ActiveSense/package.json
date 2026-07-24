@@ -12,7 +12,7 @@
     "@supabase/supabase-js": "^2.108.2",
     "@types/three": "^0.184.1",
     "expo": "~56.0.17",
-    "expo-asset": "~56.0.17",
+    "expo-asset": "~56.0.21",
     "expo-camera": "~56.0.8",
     "expo-dev-client": "~56.0.24",
     "expo-font": "~56.0.7",
@@ -50,7 +50,8 @@
     "web": "expo start --web",
     "db:schema": "psql \"$SUPABASE_DB_URL\" -f db/schema.sql",
     "db:seed": "psql \"$SUPABASE_DB_URL\" -f db/seed.sql",
-    "db:setup": "npm run db:schema && npm run db:seed"
+    "db:setup": "npm run db:schema && npm run db:seed",
+    "db:verify": "node scripts/verify-supabase.js"
   },
   "private": true
 }

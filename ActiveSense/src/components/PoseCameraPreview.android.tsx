@@ -7,7 +7,7 @@ LogBox.ignoreLogs(['WebView handles onPermissionRequest']);
 
 interface PoseCameraPreviewProps {
   enabled: boolean;
-  onLandmarks: (landmarks: Landmark[]) => void;
+  onLandmarks: (landmarks: PoseLandmark[]) => void;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -246,6 +246,7 @@ export default function PoseCameraPreview({ enabled, onLandmarks, style }: PoseC
         source={{ html: htmlContent, baseUrl: 'https://localhost' }}  
         onMessage={handleMessage}
         allowsInlineMediaPlayback={true}
+        mediaCapturePermissionGrantType="grant"
         mediaPlaybackRequiresUserAction={false}
         javaScriptEnabled={true}
         domStorageEnabled={true}

@@ -5,6 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { defaultStats, getStats, getUserProfile } from '../services/storage';
 import { AvatarProfileConfig, UserProfile, UserStats } from '../types';
+import { getAvatarCreatorUri } from '../services/avatarCreatorBridge';
 
 const defaultAvatarConfig: AvatarProfileConfig = {
   optionId: 'default',

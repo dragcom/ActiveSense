@@ -21,6 +21,7 @@ type IosGlbAvatarViewProps = {
   avatarConfig: AvatarProfileConfig;
   autoRotate?: boolean;
   landmarks?: PoseLandmark[];
+  mirrored?: boolean;
   showStatus?: boolean;
   transparent?: boolean;
 };
@@ -37,26 +38,45 @@ const base64ToArrayBuffer = (base64: string) => {
   return arrayBuffer;
 };
 
+const readFileArrayBuffer = async (uri: string) => {
+  const base64 = await FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  return base64ToArrayBuffer(base64);
+};
+
+const loadBundledAvatarArrayBuffer = async () => {
+  const asset = Asset.fromModule(bundledDefaultAvatar);
+  await asset.downloadAsync();
+  const localUri = asset.localUri || asset.uri;
+  if (!localUri) {
+    throw new Error('Bundled avatar asset is unavailable.');
+  }
+  return readFileArrayBuffer(localUri);
+};
+
 const loadAvatarArrayBuffer = async (avatarConfig: AvatarProfileConfig) => {
-  const sourceUri = avatarConfig.localAvatarUri || avatarConfig.avatarUrl;
-  if (isFileUri(sourceUri)) {
-    const base64 = await FileSystem.readAsStringAsync(sourceUri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    return base64ToArrayBuffer(base64);
+  const defaultSourceUri = avatarConfig.sourceAvatarUrl || avatarConfig.avatarUrl;
+  const shouldUseBundledDefault = !defaultSourceUri || isDefaultAvatarUri(defaultSourceUri);
+
+  if (shouldUseBundledDefault) {
+    return loadBundledAvatarArrayBuffer();
   }
 
-  if (!sourceUri || isDefaultAvatarUri(sourceUri)) {
-    const asset = Asset.fromModule(bundledDefaultAvatar);
-    await asset.downloadAsync();
-    const localUri = asset.localUri || asset.uri;
-    if (!localUri) {
-      throw new Error('Bundled avatar asset is unavailable.');
+  const sourceUri = avatarConfig.localAvatarUri || avatarConfig.avatarUrl;
+  if (isFileUri(sourceUri)) {
+    try {
+      return await readFileArrayBuffer(sourceUri);
+    } catch (error) {
+      if (isDefaultAvatarUri(avatarConfig.avatarUrl)) {
+        return loadBundledAvatarArrayBuffer();
+      }
+      throw error;
     }
-    const base64 = await FileSystem.readAsStringAsync(localUri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    return base64ToArrayBuffer(base64);
+  }
+
+  if (isDefaultAvatarUri(sourceUri)) {
+    return loadBundledAvatarArrayBuffer();
   }
 
   throw new Error('Avatar source is not available on this device yet.');
@@ -234,6 +254,7 @@ export default function IosGlbAvatarView({
   avatarConfig,
   autoRotate = true,
   landmarks = [],
+  mirrored = true,
   showStatus = true,
   transparent = false,
 }: IosGlbAvatarViewProps) {
@@ -372,6 +393,7 @@ export default function IosGlbAvatarView({
             restPoseRef.current,
             landmarksRef.current,
             rigStateRef.current,
+            { mirrored },
           );
         }
         renderWithoutExpoGlNoise(() => renderer.render(scene, camera));
@@ -390,7 +412,7 @@ export default function IosGlbAvatarView({
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.endFrameEXP();
     }
-  }, [autoRotate, avatarConfig, transparent]);
+  }, [autoRotate, avatarConfig, mirrored, transparent]);
 
   return (
     <View style={[styles.container, transparent && styles.transparentContainer]}>

@@ -207,7 +207,7 @@ export default function WorkoutsScreen() {
             <Text style={styles.emptyTitle}>{loadError ? 'Unable to load workouts' : 'No workouts found'}</Text>
             <Text style={styles.emptyCopy}>
               {loadError
-                ? 'Check Supabase setup, then retry. The local fallback catalog should keep this screen usable.'
+                ? 'Check Supabase setup, then retry.'
                 : 'Check your Supabase seed data or adjust the search filters.'}
             </Text>
             {loadError && (
