@@ -119,6 +119,13 @@ const validPoseLabels: PoseTrainingSample['label'][] = [
   'squat',
   'pushup',
   'lunge',
+  'sit_to_stand',
+  'hip_extension',
+  'side_leg_raise',
+  'single_leg_stand',
+  'march',
+  'quad_stretch',
+  'triceps_stretch',
 ];
 
 // The pose classifier currently extracts ten numeric features from each 33-point frame.
@@ -212,7 +219,7 @@ const fallbackRecommendedWorkout = (profile: UserProfile | null) => {
     const score = (workout: Workout) =>
       (profile?.fitnessLevel === workout.difficulty ? 4 : 0) +
       (profile?.preferredIntensity === workout.intensity ? 3 : 0) +
-      (profile && profile.age >= 55 && workout.category === 'Senior' ? 5 : 0);
+      (profile && profile.age >= 55 && workout.category === 'Healthy Ageing' ? 5 : 0);
     return score(b) - score(a);
   });
   return first ?? fallbackWorkouts[0];
