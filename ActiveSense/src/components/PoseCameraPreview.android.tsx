@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { StyleSheet, View, StyleProp, ViewStyle, LogBox } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { PoseLandmark } from '../types';
+import { Landmark } from '../screens/WorkoutSessionScreen.android';
 
 LogBox.ignoreLogs(['WebView handles onPermissionRequest']);
 
@@ -177,7 +177,6 @@ export default function PoseCameraPreview({ enabled, onLandmarks, style }: PoseC
 
         async function predictWebcam(poseLandmarker, video) {
           const canvas = document.getElementById('overlay');
-          let frameCounter = 0;
           let lastTransmissionTime = 0;
           
           async function step() {
@@ -186,20 +185,31 @@ export default function PoseCameraPreview({ enabled, onLandmarks, style }: PoseC
                 const now = performance.now();
                 const results = poseLandmarker.detectForVideo(video, now);
                 
-                if (results.landmarks && results.landmarks.length > 0) {
-                  const landmarks = results.landmarks[0];
-                  setStatus("Points: " + landmarks.length);
-                  drawSkeleton(canvas, landmarks, video.videoWidth, video.videoHeight);
-                  
-                  frameCounter++;
-                  if (frameCounter % 60 === 0) {
-                    window.logToNative("[STEP 1] MediaPipe GPU processing active coordinates bundle.");
-                  }
+                const landmarks2D = results.landmarks?.[0];
+                const worldLandmarks3D = results.worldLandmarks?.[0];
 
-                  if (now - lastTransmissionTime >= 22) {
+                if (landmarks2D) {
+                  setStatus("Points: " + landmarks2D.length);
+                  
+                  // Always use 2D screen coordinates for visual canvas overlay drawing
+                  drawSkeleton(canvas, landmarks2D, video.videoWidth, video.videoHeight);
+                  
+                  // Cap transmission at ~30 FPS to save bridge performance
+                  if (now - lastTransmissionTime >= 33) {
+                    const dataToSend = (worldLandmarks3D || landmarks2D).map((landmark, index) => ({
+                      x: landmark.x,
+                      y: landmark.y,
+                      z: landmark.z ?? 0,
+                      visibility: landmark.visibility ?? landmarks2D[index]?.visibility ?? 1,
+
+                      // Explicitly pull 2D normalized viewport coordinates from landmarks2D
+                      screenX: landmarks2D[index]?.x,
+                      screenY: landmarks2D[index]?.y,
+                    }));
+
                     window.ReactNativeWebView.postMessage(JSON.stringify({
                       type: 'LANDMARKS',
-                      data: landmarks 
+                      data: dataToSend
                     }));
                     lastTransmissionTime = now;
                   }

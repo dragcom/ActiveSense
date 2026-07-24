@@ -14,11 +14,9 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ExpoReactHostFactory
 
-// MainApplication is the Android entry point that initializes Expo and React Native.
 class MainApplication : Application(), ReactApplication {
 
   override val reactHost: ReactHost by lazy {
-    // Expo builds the ReactHost and autolinks native modules here.
     ExpoReactHostFactory.getDefaultReactHost(
       context = applicationContext,
       packageList =
@@ -31,20 +29,17 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
-    // Choose the React Native release level configured by the generated BuildConfig.
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (e: IllegalArgumentException) {
       ReleaseLevel.STABLE
     }
-    // Start React Native and notify Expo modules about application startup.
     loadReactNative(this)
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
   }
 
   override fun onConfigurationChanged(newConfig: Configuration) {
     super.onConfigurationChanged(newConfig)
-    // Forward orientation and configuration changes to Expo modules.
     ApplicationLifecycleDispatcher.onConfigurationChanged(this, newConfig)
   }
 }

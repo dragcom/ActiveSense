@@ -1,4 +1,0 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-  <!-- The pose view needs camera access to analyze workout frames locally. -->
-  <uses-permission android:name="android.permission.CAMERA" />
-</manifest>

@@ -22,7 +22,7 @@ export default function AvatarShowcaseView() {
   const [loading, setLoading] = useState(true);
   const [isWebReady, setIsWebReady] = useState(false);
   const [failed, setFailed] = useState(false);
-  const webViewUrl = getAvatarCreatorUri('home');
+  const webViewUrl = process.env.EXPO_PUBLIC_AVATAR_CREATOR_URL;
 
   useEffect(() => {
     let mounted = true;
