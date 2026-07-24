@@ -84,6 +84,29 @@ const createResult = (
   confidence,
 });
 
+const createStaticResult = (
+  feedback: string,
+  warning?: string,
+  confidence = 1,
+): PostureResult => ({
+  position: 'unknown',
+  feedback,
+  warning,
+  isStatic: true,
+  confidence,
+});
+
+const fullBodyRequired = [
+  indexes.leftShoulder,
+  indexes.rightShoulder,
+  indexes.leftHip,
+  indexes.rightHip,
+  indexes.leftKnee,
+  indexes.rightKnee,
+  indexes.leftAnkle,
+  indexes.rightAnkle,
+];
+
 const rulesMap: Record<string, (landmarks: Landmark[]) => PostureResult> = {
   'squat': (landmarks) => {
     const { leftShoulder, rightShoulder, leftHip, rightHip, leftKnee, rightKnee, leftAnkle, rightAnkle } = indexes;
@@ -227,6 +250,196 @@ const rulesMap: Record<string, (landmarks: Landmark[]) => PostureResult> = {
     }
     return createResult('middle', 'Lower until both knees bend with control.', undefined, 0.72);
   },
+  'sit_to_stand': (landmarks) => {
+    const { leftShoulder, rightShoulder, leftHip, rightHip, leftKnee, rightKnee, leftAnkle, rightAnkle } = indexes;
+    if (fullBodyRequired.some((index) => !visible(landmarks[index]))) {
+      return createResult('unknown', 'Keep your chair and full body in frame.', undefined, 0);
+    }
+
+    const shoulderMid = midpoint(landmarks[leftShoulder], landmarks[rightShoulder]);
+    const hipMid = midpoint(landmarks[leftHip], landmarks[rightHip]);
+    const kneeMid = midpoint(landmarks[leftKnee], landmarks[rightKnee]);
+    const ankleMid = midpoint(landmarks[leftAnkle], landmarks[rightAnkle]);
+    const kneeAngle = averageVisibleAngles(landmarks, [
+      [leftHip, leftKnee, leftAnkle],
+      [rightHip, rightKnee, rightAnkle],
+    ]) ?? 180;
+    const hipAngle = averageVisibleAngles(landmarks, [
+      [leftShoulder, leftHip, leftKnee],
+      [rightShoulder, rightHip, rightKnee],
+    ]) ?? 180;
+    const bodyHeightY = Math.max(0.001, ankleMid.y - shoulderMid.y);
+    const hipDepthRatio = (hipMid.y - shoulderMid.y) / bodyHeightY;
+    const torsoFromVertical = Math.abs(90 - lineAngle(shoulderMid, hipMid));
+
+    if (torsoFromVertical > 52) {
+      return createResult('middle', 'Lean slightly forward, then keep your chest lifted as you stand.', 'Chest lifted', 0.55);
+    }
+    if (hipMid.y >= kneeMid.y - bodyHeightY * 0.08 || (hipDepthRatio >= 0.48 && kneeAngle <= 135)) {
+      return createResult('bottom', 'Seated position found. Press through your feet to stand.', undefined, 0.9);
+    }
+    if (hipDepthRatio <= 0.36 && kneeAngle >= 150 && hipAngle >= 145) {
+      return createResult('top', 'Standing tall. Lower back to the chair with control.', undefined, 0.9);
+    }
+    return createResult('middle', 'Move between seated and standing slowly.', undefined, 0.7);
+  },
+  'hip_extension': (landmarks) => {
+    const { leftShoulder, rightShoulder, leftHip, rightHip, leftKnee, rightKnee, leftAnkle, rightAnkle } = indexes;
+    if (fullBodyRequired.some((index) => !visible(landmarks[index]))) {
+      return createResult('unknown', 'Stand sideways so both legs are visible.', undefined, 0);
+    }
+
+    const shoulderMid = midpoint(landmarks[leftShoulder], landmarks[rightShoulder]);
+    const hipMid = midpoint(landmarks[leftHip], landmarks[rightHip]);
+    const shoulderWidth = Math.max(0.001, distance(landmarks[leftShoulder], landmarks[rightShoulder]));
+    const torsoFromVertical = Math.abs(90 - lineAngle(shoulderMid, hipMid));
+    const leftKneeAngle = calculateAngle(landmarks[leftHip], landmarks[leftKnee], landmarks[leftAnkle]);
+    const rightKneeAngle = calculateAngle(landmarks[rightHip], landmarks[rightKnee], landmarks[rightAnkle]);
+    const leftBackReach = (landmarks[leftHip].x - landmarks[leftAnkle].x) / shoulderWidth;
+    const rightBackReach = (landmarks[rightAnkle].x - landmarks[rightHip].x) / shoulderWidth;
+    const maxBackReach = Math.max(leftBackReach, rightBackReach);
+    const standingNeutral = Math.abs(landmarks[leftAnkle].x - landmarks[rightAnkle].x) / shoulderWidth < 0.65;
+
+    if (torsoFromVertical > 38) {
+      return createResult('middle', 'Stay tall and avoid leaning forward.', 'Stand tall', 0.55);
+    }
+    if (Math.min(leftKneeAngle, rightKneeAngle) < 145) {
+      return createResult('middle', 'Keep the moving leg mostly straight.', 'Straight leg', 0.55);
+    }
+    if (maxBackReach > 0.55) {
+      return createResult('bottom', 'Good hip extension. Bring the leg back slowly.', undefined, 0.88);
+    }
+    if (standingNeutral) {
+      return createResult('top', 'Feet together. Lift one straight leg gently backward.', undefined, 0.84);
+    }
+    return createResult('middle', 'Move one straight leg backward, then return with control.', undefined, 0.7);
+  },
+  'side_leg_raise': (landmarks) => {
+    const { leftShoulder, rightShoulder, leftHip, rightHip, leftKnee, rightKnee, leftAnkle, rightAnkle } = indexes;
+    if (fullBodyRequired.some((index) => !visible(landmarks[index]))) {
+      return createResult('unknown', 'Stand facing the camera so both legs are visible.', undefined, 0);
+    }
+
+    const shoulderMid = midpoint(landmarks[leftShoulder], landmarks[rightShoulder]);
+    const hipMid = midpoint(landmarks[leftHip], landmarks[rightHip]);
+    const shoulderWidth = Math.max(0.001, distance(landmarks[leftShoulder], landmarks[rightShoulder]));
+    const torsoFromVertical = Math.abs(90 - lineAngle(shoulderMid, hipMid));
+    const ankleSpread = Math.abs(landmarks[leftAnkle].x - landmarks[rightAnkle].x) / shoulderWidth;
+    const leftLegStraight = calculateAngle(landmarks[leftHip], landmarks[leftKnee], landmarks[leftAnkle]) >= 145;
+    const rightLegStraight = calculateAngle(landmarks[rightHip], landmarks[rightKnee], landmarks[rightAnkle]) >= 145;
+
+    if (torsoFromVertical > 34) {
+      return createResult('middle', 'Keep your torso upright as the leg moves sideways.', 'Stand tall', 0.55);
+    }
+    if (!leftLegStraight || !rightLegStraight) {
+      return createResult('middle', 'Keep the raised leg mostly straight.', 'Straight leg', 0.58);
+    }
+    if (ankleSpread > 1.35) {
+      return createResult('bottom', 'Good side leg raise. Lower slowly.', undefined, 0.88);
+    }
+    if (ankleSpread < 0.72) {
+      return createResult('top', 'Feet together. Lift one leg out to the side.', undefined, 0.84);
+    }
+    return createResult('middle', 'Lift sideways with control, then return to standing.', undefined, 0.72);
+  },
+  'single_leg_stand': (landmarks) => {
+    const { leftShoulder, rightShoulder, leftHip, rightHip, leftKnee, rightKnee, leftAnkle, rightAnkle } = indexes;
+    if (fullBodyRequired.some((index) => !visible(landmarks[index]))) {
+      return createStaticResult('Keep your full body in frame for balance tracking.', undefined, 0);
+    }
+
+    const shoulderMid = midpoint(landmarks[leftShoulder], landmarks[rightShoulder]);
+    const hipMid = midpoint(landmarks[leftHip], landmarks[rightHip]);
+    const shoulderWidth = Math.max(0.001, distance(landmarks[leftShoulder], landmarks[rightShoulder]));
+    const torsoFromVertical = Math.abs(90 - lineAngle(shoulderMid, hipMid));
+    const leftLift = (landmarks[leftAnkle].y - landmarks[leftKnee].y) / shoulderWidth;
+    const rightLift = (landmarks[rightAnkle].y - landmarks[rightKnee].y) / shoulderWidth;
+    const oneKneeRaised = leftLift < 0.7 || rightLift < 0.7;
+    const feetSeparated = Math.abs(landmarks[leftAnkle].x - landmarks[rightAnkle].x) / shoulderWidth;
+
+    if (torsoFromVertical > 34) {
+      return createStaticResult('Stand tall and use a chair for support if needed.', 'Steady torso', 0.55);
+    }
+    if (oneKneeRaised) {
+      return createStaticResult('Good balance hold. Keep your standing knee soft.', undefined, 0.9);
+    }
+    if (feetSeparated < 0.75) {
+      return createStaticResult('Lift one knee in front and hold your balance.', undefined, 0.65);
+    }
+    return createStaticResult('Bring your feet under your hips, then lift one knee.', 'Reset stance', 0.55);
+  },
+  'march': (landmarks) => {
+    const { leftShoulder, rightShoulder, leftHip, rightHip, leftKnee, rightKnee, leftAnkle, rightAnkle } = indexes;
+    if (fullBodyRequired.some((index) => !visible(landmarks[index]))) {
+      return createResult('unknown', 'Stand where your knees and feet are visible.', undefined, 0);
+    }
+
+    const shoulderMid = midpoint(landmarks[leftShoulder], landmarks[rightShoulder]);
+    const hipMid = midpoint(landmarks[leftHip], landmarks[rightHip]);
+    const shoulderWidth = Math.max(0.001, distance(landmarks[leftShoulder], landmarks[rightShoulder]));
+    const torsoFromVertical = Math.abs(90 - lineAngle(shoulderMid, hipMid));
+    const leftKneeLift = (landmarks[leftHip].y - landmarks[leftKnee].y) / shoulderWidth;
+    const rightKneeLift = (landmarks[rightHip].y - landmarks[rightKnee].y) / shoulderWidth;
+    const bothFeetDown = landmarks[leftAnkle].y > landmarks[leftKnee].y && landmarks[rightAnkle].y > landmarks[rightKnee].y;
+
+    if (torsoFromVertical > 40) {
+      return createResult('middle', 'Keep your body tall while marching.', 'Stand tall', 0.55);
+    }
+    if (Math.max(leftKneeLift, rightKneeLift) > -0.1) {
+      return createResult('bottom', 'Good knee lift. Keep marching gently.', undefined, 0.86);
+    }
+    if (bothFeetDown) {
+      return createResult('top', 'Lift one knee at a time and swing your arms.', undefined, 0.78);
+    }
+    return createResult('middle', 'March slowly with alternating knees.', undefined, 0.7);
+  },
+  'quad_stretch': (landmarks) => {
+    const { leftShoulder, rightShoulder, leftHip, rightHip, leftKnee, rightKnee, leftAnkle, rightAnkle } = indexes;
+    if (fullBodyRequired.some((index) => !visible(landmarks[index]))) {
+      return createStaticResult('Keep your full body in frame for the stretch.', undefined, 0);
+    }
+
+    const shoulderMid = midpoint(landmarks[leftShoulder], landmarks[rightShoulder]);
+    const hipMid = midpoint(landmarks[leftHip], landmarks[rightHip]);
+    const torsoFromVertical = Math.abs(90 - lineAngle(shoulderMid, hipMid));
+    const leftKneeAngle = calculateAngle(landmarks[leftHip], landmarks[leftKnee], landmarks[leftAnkle]);
+    const rightKneeAngle = calculateAngle(landmarks[rightHip], landmarks[rightKnee], landmarks[rightAnkle]);
+    const oneKneeBent = Math.min(leftKneeAngle, rightKneeAngle) <= 75;
+    const thighsClose =
+      Math.abs(landmarks[leftKnee].x - landmarks[rightKnee].x) <=
+      Math.max(0.04, distance(landmarks[leftHip], landmarks[rightHip]) * 0.9);
+
+    if (torsoFromVertical > 36) {
+      return createStaticResult('Stand tall and hold a chair if you need support.', 'Stand tall', 0.55);
+    }
+    if (oneKneeBent && thighsClose) {
+      return createStaticResult('Good quadriceps stretch. Keep both thighs close.', undefined, 0.88);
+    }
+    return createStaticResult('Bend one knee behind you and keep your thighs close together.', undefined, 0.62);
+  },
+  'triceps_stretch': (landmarks) => {
+    const { leftShoulder, rightShoulder, leftElbow, rightElbow, leftWrist, rightWrist, leftHip, rightHip } = indexes;
+    const required = [leftShoulder, rightShoulder, leftElbow, rightElbow, leftWrist, rightWrist, leftHip, rightHip];
+    if (required.some((index) => !visible(landmarks[index]))) {
+      return createStaticResult('Keep your upper body and arms in frame.', undefined, 0);
+    }
+
+    const shoulderMid = midpoint(landmarks[leftShoulder], landmarks[rightShoulder]);
+    const hipMid = midpoint(landmarks[leftHip], landmarks[rightHip]);
+    const torsoFromVertical = Math.abs(90 - lineAngle(shoulderMid, hipMid));
+    const leftOverhead = landmarks[leftElbow].y < landmarks[leftShoulder].y && landmarks[leftWrist].y < landmarks[leftShoulder].y + 0.08;
+    const rightOverhead = landmarks[rightElbow].y < landmarks[rightShoulder].y && landmarks[rightWrist].y < landmarks[rightShoulder].y + 0.08;
+    const leftBent = calculateAngle(landmarks[leftShoulder], landmarks[leftElbow], landmarks[leftWrist]) <= 85;
+    const rightBent = calculateAngle(landmarks[rightShoulder], landmarks[rightElbow], landmarks[rightWrist]) <= 85;
+
+    if (torsoFromVertical > 38) {
+      return createStaticResult('Keep your ribs stacked over your hips.', 'Tall posture', 0.55);
+    }
+    if ((leftOverhead && leftBent) || (rightOverhead && rightBent)) {
+      return createStaticResult('Good triceps stretch. Keep breathing normally.', undefined, 0.86);
+    }
+    return createStaticResult('Raise one elbow overhead and bend the arm gently.', undefined, 0.62);
+  },
 };
 
 export const evaluatePosture = (exerciseName: string, landmarks: Landmark[]): PostureResult => {
@@ -235,7 +448,7 @@ export const evaluatePosture = (exerciseName: string, landmarks: Landmark[]): Po
   }
 
   const normalizedName = exerciseName.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const key = Object.keys(rulesMap).find(k => normalizedName.includes(k));
+  const key = Object.keys(rulesMap).find(k => normalizedName.includes(k.replace(/[^a-z0-9]/g, '')));
   
   if (key) return rulesMap[key](landmarks);
   

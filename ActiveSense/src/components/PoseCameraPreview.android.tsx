@@ -1,22 +1,54 @@
-import { useRef } from 'react';
-import { StyleSheet, View, StyleProp, ViewStyle, LogBox } from 'react-native';
-import { WebView } from 'react-native-webview';
-import { Landmark } from '../screens/WorkoutSessionScreen.android';
+import { useEffect, useRef, useState } from 'react';
+import { StyleSheet, Text, View, StyleProp, ViewStyle, LogBox } from 'react-native';
+import { WebView, WebViewMessageEvent } from 'react-native-webview';
+import { Camera } from 'expo-camera';
+import { PoseLandmark } from '../types';
 
 LogBox.ignoreLogs(['WebView handles onPermissionRequest']);
 
 interface PoseCameraPreviewProps {
   enabled: boolean;
-  onLandmarks: (landmarks: Landmark[]) => void;
+  onLandmarks: (landmarks: PoseLandmark[]) => void;
+  // These shared adapter options are already handled by the native WebView presentation.
+  overlayMode?: 'avatar' | 'skeleton';
+  presentation?: 'card' | 'fill';
   style?: StyleProp<ViewStyle>;
 }
 
 export default function PoseCameraPreview({ enabled, onLandmarks, style }: PoseCameraPreviewProps) {
   const webViewRef = useRef<WebView>(null);
+  const [permissionStatus, setPermissionStatus] = useState<'checking' | 'granted' | 'denied'>('checking');
+
+  useEffect(() => {
+    let mounted = true;
+    Camera.requestCameraPermissionsAsync()
+      .then(({ status }) => {
+        if (mounted) {
+          setPermissionStatus(status === 'granted' ? 'granted' : 'denied');
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setPermissionStatus('denied');
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   if (!enabled) return null;
+  if (permissionStatus !== 'granted') {
+    return (
+      <View style={[styles.permissionPanel, style]}>
+        <Text style={styles.permissionText}>
+          {permissionStatus === 'checking' ? 'Checking camera permission…' : 'Camera permission is required for pose tracking.'}
+        </Text>
+      </View>
+    );
+  }
 
-  const handleMessage = (event: any) => {
+  const handleMessage = (event: WebViewMessageEvent) => {
     try {
       const message = JSON.parse(event.nativeEvent.data);
       if (message.type === 'LANDMARKS') {
@@ -268,5 +300,15 @@ export default function PoseCameraPreview({ enabled, onLandmarks, style }: PoseC
 const styles = StyleSheet.create({
   container: { backgroundColor: '#111827' },
   webview: { flex: 1, backgroundColor: 'transparent' },
-  webviewContainer: { borderRadius: 24, overflow: 'hidden' }
+  webviewContainer: { borderRadius: 24, overflow: 'hidden' },
+  permissionPanel: {
+    alignItems: 'center',
+    backgroundColor: '#111827',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  permissionText: {
+    color: '#fff',
+    textAlign: 'center',
+  },
 });
