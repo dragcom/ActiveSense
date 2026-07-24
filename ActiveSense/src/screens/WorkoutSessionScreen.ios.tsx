@@ -5,15 +5,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Speech from 'expo-speech';
-import { addWorkoutResult, getUserProfile } from '../services/storage';
-import { getAvatarRenderUri } from '../services/avatarAssetStorage';
+import WebView, { WebViewMessageEvent } from 'react-native-webview';
+import { addWorkoutResult } from '../services/storage';
 import PoseCameraPreview from '../components/PoseCameraPreview';
 import { db } from '../services/database';
-import { assessSquatTechnique, assessStandingPose, createPoseClassifier, formatPoseClass } from '../services/poseClassifier';
-import { defaultAvatarConfig, normalizeAvatarConfig } from '../data/avatars';
+import { getAvatarCreatorUri } from '../services/avatarCreatorBridge';
+import { createPoseClassifier, formatPoseClass } from '../services/poseClassifier';
 import { colors } from '../theme/colors';
 import { RootStackParamList } from '../navigation/types';
-import { AvatarProfileConfig, PoseClassification, PoseLandmark, WorkoutExercise } from '../types';
+import { PoseClassification, PoseLandmark, WorkoutExercise } from '../types';
+import { evaluatePosture } from '../utils/postureRules';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutSession'>;
 
@@ -33,16 +34,20 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const [squatFeedback, setSquatFeedback] = useState<string | null>(null);
   const [isSavingResult, setIsSavingResult] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  const [sessionAvatar, setSessionAvatar] = useState<AvatarProfileConfig>(defaultAvatarConfig);
+  const [showCameraPreview, setShowCameraPreview] = useState(false);
+  const [isAvatarReady, setIsAvatarReady] = useState(false);
+  const [hasAvatarFailed, setHasAvatarFailed] = useState(false);
+  const avatarWebViewRef = useRef<WebView>(null);
   const poseClassifierRef = useRef<ReturnType<typeof createPoseClassifier> | null>(null);
   // Refs hold timing flags so camera frames do not trigger extra renders.
   const poseCountRef = useRef(0);
+  const lastAvatarFrameAtRef = useRef(0);
   const lastPredictionAtRef = useRef(0);
   const repArmedRef = useRef(true);
   const lastRepAtRef = useRef(0);
   const lastSpokenAtRef = useRef(0);
   const spokenCueTimesRef = useRef<Record<string, number>>({});
-  const squatPhaseRef = useRef<'ready' | 'down'>('ready');
+  const movementPhaseRef = useRef<'ready' | 'down'>('ready');
   const closingRef = useRef(false);
 
   const currentEx = exercises[currentExercise];
@@ -50,26 +55,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const exerciseComplete = reps >= targetReps;
   const hasPoseTracking = posePointCount > 0;
   const progress = useMemo(() => Math.min(100, (reps / targetReps) * 100), [reps, targetReps]);
-
-  useEffect(() => {
-    let mounted = true;
-    // Start sessions with the avatar chosen during onboarding/profile edit.
-    const loadProfileAvatar = async () => {
-      try {
-        const profile = await getUserProfile();
-        const savedAvatar = normalizeAvatarConfig(profile?.avatar);
-        if (mounted) {
-          setSessionAvatar(savedAvatar);
-        }
-      } catch (error) {
-        // Avatar choice is cosmetic, so workout tracking should continue if profile lookup fails.
-      }
-    };
-    loadProfileAvatar();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const avatarSource = useMemo(() => ({ uri: getAvatarCreatorUri('live') }), []);
 
   const speakWorkoutCue = useCallback((text: string, minIntervalMs = 6000, interrupt = false) => {
     if (!soundEnabled || closingRef.current) {
@@ -157,15 +143,48 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
     };
   }, [route.params?.workoutId]);
 
+  const handleAvatarMessage = useCallback((event: WebViewMessageEvent) => {
+    try {
+      const message = JSON.parse(event.nativeEvent.data);
+      if (message?.type === 'WEBVIEW_READY') {
+        setIsAvatarReady(true);
+        setHasAvatarFailed(false);
+      }
+    } catch {
+      // Non-JSON logs from the avatar page can be ignored.
+    }
+  }, []);
+
+  const sendPoseFrameToAvatar = useCallback((landmarks: PoseLandmark[]) => {
+    if (!isAvatarReady || !avatarWebViewRef.current || landmarks.length === 0) {
+      return;
+    }
+    const now = Date.now();
+    if (now - lastAvatarFrameAtRef.current < 32) {
+      return;
+    }
+    lastAvatarFrameAtRef.current = now;
+    const mirroredJoints = landmarks.slice(0, 33).map((joint) => ({
+      ...joint,
+      x: 1 - Math.max(0, Math.min(1, joint.x)),
+      y: Math.max(0, Math.min(1, joint.y)),
+    }));
+    const payload = JSON.stringify({ type: 'LIVE_POSE', joints: mirroredJoints, mirrored: true });
+    avatarWebViewRef.current.injectJavaScript(
+      `if (window.receiveRNMessage) { window.receiveRNMessage(${payload}); } true;`,
+    );
+  }, [isAvatarReady]);
+
   const handleLandmarks = useCallback((landmarks: PoseLandmark[]) => {
     if (closingRef.current) {
       return;
     }
-    // This callback receives 33-point pose frames from web or native camera preview.
+    // This callback receives 33-point pose frames from the shared WebView camera.
     if (poseCountRef.current !== landmarks.length) {
       poseCountRef.current = landmarks.length;
       setPosePointCount(landmarks.length);
     }
+    sendPoseFrameToAvatar(landmarks);
     const now = Date.now();
     if (now - lastPredictionAtRef.current < 300) {
       // Classify only a few times per second to keep the UI responsive.
@@ -173,24 +192,19 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
     }
     lastPredictionAtRef.current = now;
     const prediction = poseClassifierRef.current?.(landmarks) ?? null;
-    const squatAssessment = currentEx?.poseClass === 'squat'
-      ? assessSquatTechnique(landmarks)
-      : null;
-    const standingAssessment = currentEx?.poseClass === 'squat'
-      ? assessStandingPose(landmarks)
-      : null;
+    const posture = currentEx ? evaluatePosture(currentEx.poseClass, landmarks) : null;
     const effectivePrediction =
-      squatAssessment?.isProper
+      currentEx && posture && !posture.isStatic && posture.confidence >= 0.55
         ? {
-            label: 'squat' as const,
-            confidence: Math.max(prediction?.label === 'squat' ? prediction.confidence : 0, squatAssessment.confidence),
-            distance: prediction?.label === 'squat' ? prediction.distance : 0,
+            label: currentEx.poseClass,
+            confidence: Math.max(prediction?.label === currentEx.poseClass ? prediction.confidence : 0, posture.confidence),
+            distance: prediction?.label === currentEx.poseClass ? prediction.distance : 0,
           }
         : prediction;
     setPosePrediction(effectivePrediction);
     const nextSquatFeedback =
-      currentEx?.poseClass === 'squat' && squatAssessment && !squatAssessment.isProper
-        ? squatAssessment.reasons[0] ?? 'Set hips back and keep knees aligned'
+      posture && currentEx && (posture.warning || posture.position === 'middle' || posture.position === 'unknown')
+        ? posture.warning ?? posture.feedback
         : null;
     setSquatFeedback(nextSquatFeedback);
     if (nextSquatFeedback) {
@@ -201,18 +215,18 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
       return;
     }
 
-    if (currentEx.poseClass === 'squat') {
-      if (squatAssessment?.isProper) {
-        squatPhaseRef.current = 'down';
+    if (posture && !posture.isStatic) {
+      if (posture.position === 'bottom') {
+        movementPhaseRef.current = 'down';
         return;
       }
 
       if (
-        squatPhaseRef.current === 'down' &&
-        standingAssessment?.isStanding &&
+        posture.position === 'top' &&
+        movementPhaseRef.current === 'down' &&
         now - lastRepAtRef.current >= 900
       ) {
-        squatPhaseRef.current = 'ready';
+        movementPhaseRef.current = 'ready';
         lastRepAtRef.current = now;
         setReps((current) => {
           const next = Math.min(targetReps, current + 1);
@@ -251,13 +265,13 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
       }
       return next;
     });
-  }, [currentEx, isClosing, isPaused, speakWorkoutCue, targetReps]);
+  }, [currentEx, isClosing, isPaused, sendPoseFrameToAvatar, speakWorkoutCue, targetReps]);
 
   useEffect(() => {
     // New exercises start ready to count the next valid rep.
     repArmedRef.current = true;
     lastRepAtRef.current = 0;
-    squatPhaseRef.current = 'ready';
+    movementPhaseRef.current = 'ready';
     setSquatFeedback(null);
     if (currentEx) {
       speakWorkoutCue(`${currentEx.name}. Target ${targetReps} reps`, 1200, true);
@@ -316,7 +330,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
       setPosePrediction(null);
       setSquatFeedback(null);
       repArmedRef.current = true;
-      squatPhaseRef.current = 'ready';
+      movementPhaseRef.current = 'ready';
       return;
     }
 
@@ -366,13 +380,29 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
       {/* The camera preview is the full-screen underlay behind all workout controls. */}
       <View style={styles.cameraUnderlay}>
         {!isClosing && (
-          <PoseCameraPreview
-            enabled={!isPaused}
-            onLandmarks={handleLandmarks}
-            overlayMode="avatar"
-            avatarUrl={getAvatarRenderUri(sessionAvatar)}
-            presentation="fill"
-          />
+          <>
+            <View style={[StyleSheet.absoluteFill, (showCameraPreview || hasAvatarFailed) && styles.hiddenPreview]}>
+              <WebView
+                ref={avatarWebViewRef}
+                source={avatarSource}
+                onMessage={handleAvatarMessage}
+                onError={() => setHasAvatarFailed(true)}
+                onHttpError={() => setHasAvatarFailed(true)}
+                scrollEnabled={false}
+                mediaCapturePermissionGrantType="grant"
+                allowsInlineMediaPlayback={true}
+                mediaPlaybackRequiresUserAction={false}
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+                originWhitelist={['*']}
+                containerStyle={{ backgroundColor: 'transparent' }}
+                style={styles.avatarWebView}
+              />
+            </View>
+            <View style={[StyleSheet.absoluteFill, !(showCameraPreview || hasAvatarFailed) && styles.hiddenPreview]}>
+              <PoseCameraPreview enabled={!isPaused} onLandmarks={handleLandmarks} style={styles.cameraPreview} />
+            </View>
+          </>
         )}
       </View>
 
@@ -419,32 +449,45 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
       {/* Bottom panel shows rep progress, controls, and next-step action. */}
       <View style={[styles.bottomPanel, { paddingBottom: insets.bottom + 12 }]}>
         <View style={styles.repCard}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.repValue}>{reps}/{targetReps}</Text>
-            <Text style={styles.repSubtext} numberOfLines={1}>
-              {`${trackerText} · ${detectedText}`}
-            </Text>
+          <View style={styles.repHeaderRow}>
+            <View style={styles.repTextBlock}>
+              <Text style={styles.repValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
+                {reps}/{targetReps}
+              </Text>
+              <Text style={styles.repSubtext} numberOfLines={1}>
+                {`${trackerText} · ${detectedText}`}
+              </Text>
+            </View>
+            <View style={styles.hpPill}>
+              <Feather name="award" size={15} color={colors.primary.teal} />
+              <Text style={styles.hpPillText}>+{currentEx.points} HP</Text>
+            </View>
           </View>
-          <View style={styles.hpPill}>
-            <Feather name="award" size={15} color={colors.primary.teal} />
-            <Text style={styles.hpPillText}>+{currentEx.points} HP</Text>
+          <View style={styles.repControlsRow}>
+            <TouchableOpacity onPress={() => setReps(0)} style={styles.resetButton}>
+              <Feather name="refresh-cw" size={22} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityLabel="Add one manual rep"
+              onPress={handleManualRep}
+              style={[styles.manualRepButton, hasPoseTracking && styles.manualRepButtonSubtle]}
+            >
+              <Feather name="plus" size={20} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.soundButton, soundEnabled && styles.soundButtonActive]}
+              onPress={() => setSoundEnabled(!soundEnabled)}
+            >
+              <Feather name={soundEnabled ? 'volume-2' : 'volume-x'} size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityLabel="Toggle camera preview"
+              style={[styles.soundButton, showCameraPreview && styles.soundButtonActive]}
+              onPress={() => setShowCameraPreview(!showCameraPreview)}
+            >
+              <Feather name="camera" size={18} color="#fff" />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={() => setReps(0)} style={styles.resetButton}>
-            <Feather name="refresh-cw" size={22} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            accessibilityLabel="Add one manual rep"
-            onPress={handleManualRep}
-            style={[styles.manualRepButton, hasPoseTracking && styles.manualRepButtonSubtle]}
-          >
-            <Feather name="plus" size={20} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.soundButton, soundEnabled && styles.soundButtonActive]}
-            onPress={() => setSoundEnabled(!soundEnabled)}
-          >
-            <Feather name={soundEnabled ? 'volume-2' : 'volume-x'} size={18} color="#fff" />
-          </TouchableOpacity>
         </View>
 
         <View style={styles.progressBarTrack}>
@@ -489,6 +532,9 @@ const styles = StyleSheet.create({
     left: 0,
     backgroundColor: colors.background.dark,
   },
+  avatarWebView: { flex: 1, backgroundColor: 'transparent' },
+  cameraPreview: { flex: 1, width: '100%', height: '100%' },
+  hiddenPreview: { opacity: 0, pointerEvents: 'none' },
   topShade: { position: 'absolute', left: 0, right: 0, top: 0, height: 260 },
   bottomShade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 260 },
   topOverlay: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 18 },
@@ -535,17 +581,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   repCard: {
-    minHeight: 88,
+    minHeight: 124,
     borderRadius: 22,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    gap: 12,
     backgroundColor: 'rgba(20, 184, 166, 0.86)',
   },
-  repValue: { color: '#fff', fontSize: 46, fontWeight: '900' },
+  repHeaderRow: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  repTextBlock: { flex: 1, minWidth: 0 },
+  repValue: { color: '#fff', fontSize: 44, fontWeight: '900', includeFontPadding: false },
   repSubtext: { color: 'rgba(255,255,255,0.84)', fontSize: 11, fontWeight: '700', marginTop: 2 },
+  repControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
   hpPill: {
     flexDirection: 'row',
     alignItems: 'center',

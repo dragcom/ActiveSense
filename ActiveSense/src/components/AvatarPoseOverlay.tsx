@@ -25,16 +25,18 @@ export default function AvatarPoseOverlay({
 
     return (
       <View style={styles.overlay} pointerEvents="none">
+        <PoseSkeletonOverlay landmarks={landmarks} mirrored={mirrored} />
         <IosGlbAvatarView
           avatarConfig={avatarConfig}
           autoRotate={false}
           landmarks={landmarks}
+          mirrored={mirrored}
           showStatus={false}
           transparent
         />
         <View style={styles.statusPill}>
           <Text style={styles.statusText}>
-            {landmarks.length === 33 ? 'Avatar tracking camera pose' : 'Avatar waiting for full pose'}
+            {landmarks.length === 33 ? 'Avatar + 33-point pose live' : 'Avatar waiting for full pose'}
           </Text>
         </View>
       </View>

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { PoseLandmark } from '../types';
-import { clampUnit, getVisibility, POSE_CONNECTIONS } from '../utils/postureRules';
+import { clampUnit, getVisibility, POSE_CONNECTIONS } from '../utils/poseRig';
 
 // PoseSkeletonOverlay draws the original MediaPipe stick figure over the camera preview.
 type PoseSkeletonOverlayProps = {

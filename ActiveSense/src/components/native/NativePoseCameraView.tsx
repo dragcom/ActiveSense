@@ -8,6 +8,8 @@ type NativeLandmarksEvent = {
   nativeEvent: {
     landmarks?: PoseLandmark[];
     timestamp?: number;
+    frameWidth?: number;
+    frameHeight?: number;
   };
 };
 

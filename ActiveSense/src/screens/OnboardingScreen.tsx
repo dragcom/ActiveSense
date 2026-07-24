@@ -220,7 +220,7 @@ export default function OnboardingScreen({ navigation, route }: Props) {
       navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Please try again.';
-      Alert.alert('Unable to save', message);
+      Alert.alert(message.includes('confirm your email') ? 'Confirm your email' : 'Unable to save', message);
     } finally {
       setIsSaving(false);
     }

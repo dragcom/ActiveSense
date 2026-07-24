@@ -6,22 +6,17 @@ import { Feather } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Speech from 'expo-speech';
 import { addWorkoutResult } from '../services/storage';
-import PoseCameraPreview from '../components/PoseCameraPreview';
+import PoseCameraPreview from '../components/PoseCameraPreview.android';
 import { db } from '../services/database';
 import { colors } from '../theme/colors';
 import { RootStackParamList } from '../navigation/types';
-import { WorkoutExercise } from '../types';
+import { PoseLandmark, WorkoutExercise } from '../types';
 import WebView, { WebViewMessageEvent } from 'react-native-webview';
 import { Camera } from 'expo-camera';
+import { evaluatePosture } from '../utils/postureRules';
+import { getAvatarCreatorUri } from '../services/avatarCreatorBridge';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutSession'>;
-export interface Landmark {
-  x: number;
-  y: number;
-  z: number;
-  visibility: number;
-}
-const AVATAR_SOURCE = { uri: 'http://activesense.dpdns.org?mode=live' };
 
 export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
@@ -30,7 +25,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const [reps, setReps] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [showCamera, setShowCamera] = useState(true); 
+  const [showCamera, setShowCamera] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
   const [posePointCount, setPosePointCount] = useState(0);
   const [dynamicFeedback, setDynamicFeedback] = useState('Position yourself in frame...');
@@ -43,8 +38,10 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const startTimeRef = useRef(Date.now());
   const webViewRef = useRef<WebView>(null);
   const lastFrameTime = useRef(0);
+  const lastRepTime = useRef(0);
   const [isWebViewReady, setIsWebViewReady] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
+  const avatarSource = useMemo(() => ({ uri: getAvatarCreatorUri('live') }), []);
 
   const INJECTED_LOG_BRIDGE = `
   (function() {
@@ -163,8 +160,11 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
     }
   }, [soundEnabled]);
 
-  const handleLandmarks = useCallback((landmarks: Landmark[]) => {
-    if (isPaused || !currentEx || !isWebViewReady || !webViewRef.current) return;
+  const handleLandmarks = useCallback((landmarks: PoseLandmark[]) => {
+    setPosePointCount(landmarks.length);
+
+    if (!currentEx || isPaused) return;
+
     const packedData = landmarks.map((lm) => ({
       x: lm.x,
       y: lm.y,
@@ -173,14 +173,44 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
     }));
 
     const now = Date.now();
-    if (now - lastFrameTime.current > 32) {
+    const posture = evaluatePosture(currentEx.poseClass, packedData);
+    setDynamicFeedback(posture.warning ?? posture.feedback);
+    setIsStaticMode(Boolean(posture.isStatic));
+
+    if (!posture.isStatic) {
+      if (posture.position === 'bottom') {
+        repPhase.current = 'bottom';
+      } else if (
+        posture.position === 'top' &&
+        repPhase.current === 'bottom' &&
+        now - lastRepTime.current > 850
+      ) {
+        repPhase.current = 'top';
+        lastRepTime.current = now;
+        setReps(prev => {
+          const next = Math.min(targetReps, prev + 1);
+          if (next !== prev) {
+            triggerVoice(next === targetReps ? 'Set complete!' : `${next}`);
+          }
+          return next;
+        });
+      } else if (posture.position === 'middle' && repPhase.current === 'unknown') {
+        repPhase.current = 'middle';
+      }
+    }
+
+    if (isWebViewReady && webViewRef.current && now - lastFrameTime.current > 32) {
       lastFrameTime.current = now;
-      console.log("⚡ Injecting coordinate frame into Avatar WebView...");
-      const payload = JSON.stringify({ type: 'LIVE_POSE', joints: packedData });
+      const mirroredJoints = packedData.map((joint) => ({
+        ...joint,
+        x: 1 - Math.max(0, Math.min(1, joint.x)),
+        y: Math.max(0, Math.min(1, joint.y)),
+      }));
+      const payload = JSON.stringify({ type: 'LIVE_POSE', joints: mirroredJoints, mirrored: true });
       const script = `if (window.receiveRNMessage) { window.receiveRNMessage(${payload}); } true;`;
       webViewRef.current.injectJavaScript(script);
     }
-  }, [isPaused, currentEx, isWebViewReady]);
+  }, [isPaused, currentEx, isWebViewReady, targetReps, triggerVoice]);
 
   const handleManualRep = () => {
     if (isPaused) return;
@@ -212,6 +242,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
       setCurrentExercise(currentExercise + 1);
       setReps(0);
       repPhase.current = 'unknown';
+      lastRepTime.current = 0;
       startTimeRef.current = Date.now(); 
       return;
     }
@@ -265,7 +296,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
           <View style={[styles.cameraView, showCamera && { position: 'absolute', top: -10000, left: -10000 }]}>
             <WebView
               ref={webViewRef}
-              source={AVATAR_SOURCE}
+              source={avatarSource}
               onMessage={onMessage}
               scrollEnabled={false}
               webviewDebuggingEnabled={true} 

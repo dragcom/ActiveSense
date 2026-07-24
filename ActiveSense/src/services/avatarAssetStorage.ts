@@ -26,6 +26,9 @@ export const getAvatarRenderUri = (avatar?: AvatarProfileConfig | null) => {
     }
     return normalized.localAvatarUri || sourceAvatarUrl || normalized.avatarUrl;
   }
+  if (isDefaultAvatar(getSourceAvatarUri(normalized))) {
+    return defaultAvatarConfig.avatarUrl;
+  }
   return normalized.localAvatarUri || normalized.avatarUrl;
 };
 
@@ -86,6 +89,15 @@ export const cacheAvatarGlb = async (avatar: AvatarProfileConfig): Promise<Avata
   const normalized = normalizeAvatarConfig(avatar);
   const sourceAvatarUrl = getSourceAvatarUri(normalized);
 
+  if (isDefaultAvatar(sourceAvatarUrl)) {
+    return {
+      ...normalized,
+      sourceAvatarUrl,
+      localAvatarUri: undefined,
+      cachedAt: normalized.cachedAt ?? new Date().toISOString(),
+    };
+  }
+
   if (isLocalFileUri(normalized.localAvatarUri || normalized.avatarUrl)) {
     return {
       ...normalized,
@@ -108,9 +120,7 @@ export const cacheAvatarGlb = async (avatar: AvatarProfileConfig): Promise<Avata
     }
 
     const resolvedSource = resolveRelativeAvatarUrl(sourceAvatarUrl);
-    if (isDefaultAvatar(sourceAvatarUrl)) {
-      await copyBundledDefaultAvatar(destination);
-    } else if (isHttpUri(resolvedSource)) {
+    if (isHttpUri(resolvedSource)) {
       await FileSystem.downloadAsync(resolvedSource, destination);
     } else {
       await copyBundledDefaultAvatar(destination);
