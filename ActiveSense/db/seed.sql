@@ -102,7 +102,7 @@ on conflict (id) do update set name = excluded.name, points = excluded.points, e
 insert into public.achievements (id, title, emoji, description, requirement_type, requirement_value, sort_order) values
   (1, '7-Day Streak', '🔥', 'Complete 7 days in a row', 'streak_days', 7, 10),
   (2, 'First Workout', '🎯', 'Finish your first session', 'total_workouts', 1, 20),
-  (3, '1000 Points', '💯', 'Earn 1000 Healthpoints', 'healthpoints', 1000, 30),
+  (3, '1000 Points', '💯', 'Earn 1000 lifetime Healthpoints', 'lifetime_healthpoints', 1000, 30),
   (4, '30-Day Streak', '🏆', 'Complete 30 consecutive days', 'streak_days', 30, 40)
 on conflict (id) do update set title = excluded.title, emoji = excluded.emoji, description = excluded.description, requirement_type = excluded.requirement_type, requirement_value = excluded.requirement_value, sort_order = excluded.sort_order;
 
@@ -162,9 +162,10 @@ insert into public.app_settings (key, value) values
 on conflict (key) do update set value = excluded.value;
 
 -- Seed reusable Profile and legal information pages.
+delete from public.app_pages
+where action_key in ('settings', 'notifications');
+
 insert into public.app_pages (action_key, page_type, title, icon, body, sort_order) values
-  ('settings', 'info', 'Account Settings', 'settings', 'Supabase Auth will manage email, password, and account security here. Local prototype data is currently stored on this device when Supabase Auth is not configured.', 10),
-  ('notifications', 'info', 'Notifications', 'bell', 'Workout reminders, streak prompts, and reward updates will be configured here. Notification preferences will become database-backed user settings.', 20),
   ('support', 'info', 'Help & Support', 'help-circle', 'For the prototype, support content explains how ActiveSense uses local pose estimation, Healthpoints, and tailored workouts. A future support center can connect FAQs and contact forms.', 30),
   ('privacy', 'info', 'Privacy Settings', 'shield', 'ActiveSense processes camera frames locally for pose landmarks. Raw workout video is not uploaded in this prototype; Supabase should store profile, workout, reward, and landmark summary metadata only.', 40),
   ('profile_photo', 'info', 'Profile Photo', 'camera', 'Profile photo upload will connect to Supabase Storage. The camera used during workouts remains separate and is used for local pose landmarks.', 50),
@@ -178,9 +179,13 @@ on conflict (action_key) do update set
   sort_order = excluded.sort_order;
 
 -- Seed settings-style rows shown in the Profile menu.
+delete from public.app_options
+using public.app_option_groups
+where app_options.group_id = app_option_groups.id
+  and app_option_groups.key = 'profile_menu_items'
+  and app_options.value in ('settings', 'notifications');
+
 insert into public.app_options (group_id, label, value, metadata, sort_order) values
-  (9, 'Account Settings', 'settings', '{"legacy_id":1,"icon":"settings","color":"#14B8A6"}'::jsonb, 10),
-  (9, 'Notifications', 'notifications', '{"legacy_id":2,"icon":"bell","badge":"3","color":"#14B8A6"}'::jsonb, 20),
   (9, 'Help & Support', 'support', '{"legacy_id":3,"icon":"help-circle","color":"#14B8A6"}'::jsonb, 30),
   (9, 'Privacy Settings', 'privacy', '{"legacy_id":4,"icon":"shield","color":"#14B8A6"}'::jsonb, 40),
   (9, 'Log Out', 'logout', '{"legacy_id":5,"icon":"log-out","color":"#EF4444"}'::jsonb, 50)

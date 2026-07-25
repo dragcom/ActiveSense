@@ -93,9 +93,21 @@ const main = async () => {
     .select('id,title')
     .eq('is_active', true);
   assertNoError('read active workouts', workoutError);
-  assert('Only the strength workout should be active', activeWorkouts?.length === 1 && activeWorkouts[0].id === 1);
+  const activeWorkoutIds = new Set((activeWorkouts ?? []).map((workout) => workout.id));
+  assert('Strength and Healthy Ageing workouts should be active', activeWorkoutIds.has(1) && activeWorkoutIds.has(2));
 
-  const expectedPoseClasses = ['squat', 'pushup', 'lunge'];
+  const expectedPoseClasses = [
+    'squat',
+    'pushup',
+    'lunge',
+    'sit_to_stand',
+    'hip_extension',
+    'side_leg_raise',
+    'single_leg_stand',
+    'march',
+    'quad_stretch',
+    'triceps_stretch',
+  ];
   const { data: exerciseTypes, error: exerciseTypeError } = await anon
     .from('exercise_types')
     .select('slug')
@@ -109,7 +121,7 @@ const main = async () => {
   const { data: workoutExercises, error: workoutExerciseError } = await anon
     .from('workout_exercises')
     .select('pose_class')
-    .eq('workout_id', 1);
+    .in('workout_id', [1, 2]);
   assertNoError('read strength workout exercises', workoutExerciseError);
   const workoutPoseClasses = new Set((workoutExercises ?? []).map((row) => row.pose_class));
   expectedPoseClasses.forEach((slug) => {
@@ -208,11 +220,12 @@ const main = async () => {
 
   const { data: statsBefore, error: statsBeforeError } = await authenticated
     .from('user_stats')
-    .select('healthpoints,streak_days,total_workouts')
+    .select('healthpoints,lifetime_healthpoints,streak_days,total_workouts')
     .eq('user_id', userId)
     .single();
   assertNoError('read initial stats', statsBeforeError);
   assert('Initial stats row was not created by trigger', statsBefore.total_workouts === 0);
+  assert('Initial lifetime Healthpoints should start at 0', statsBefore.lifetime_healthpoints === 0);
 
   console.log('Testing complete_workout RPC...');
   const { data: updatedStats, error: workoutRpcError } = await authenticated.rpc('complete_workout', {
@@ -225,6 +238,58 @@ const main = async () => {
   const statsAfter = Array.isArray(updatedStats) ? updatedStats[0] : updatedStats;
   assert('Workout RPC did not increment total workouts', statsAfter.total_workouts === 1);
   assert('Workout RPC did not award Healthpoints', statsAfter.healthpoints === 100);
+  assert('Workout RPC did not increment lifetime Healthpoints', statsAfter.lifetime_healthpoints === 100);
+
+  const { data: cheapestVouchers, error: cheapestVoucherError } = await authenticated
+    .from('reward_vouchers')
+    .select('id, points')
+    .eq('is_active', true)
+    .order('points', { ascending: true })
+    .limit(1);
+  assertNoError('read cheapest reward voucher', cheapestVoucherError);
+  const cheapestVoucher = cheapestVouchers?.[0];
+  assert('No active voucher was available for redemption testing', cheapestVoucher);
+
+  let redeemableStats = statsAfter;
+  while (redeemableStats.healthpoints < cheapestVoucher.points) {
+    const { data: extraStats, error: extraWorkoutError } = await authenticated.rpc('complete_workout', {
+      p_workout_id: 1,
+      p_points_earned: 100,
+      p_pose_landmark_count: 33,
+      p_client_session_id: `verify-extra-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    });
+    assertNoError('extra complete_workout RPC', extraWorkoutError);
+    redeemableStats = Array.isArray(extraStats) ? extraStats[0] : extraStats;
+  }
+
+  console.log('Testing redeem_voucher RPC and redemption-code tracking...');
+  const { data: redeemed, error: redeemError } = await authenticated.rpc('redeem_voucher', {
+    p_voucher_id: cheapestVoucher.id,
+  });
+  assertNoError('redeem_voucher RPC', redeemError);
+  const redeemedRow = Array.isArray(redeemed) ? redeemed[0] : redeemed;
+  assert('Voucher redemption did not return a code', typeof redeemedRow.redemption_code === 'string' && redeemedRow.redemption_code.startsWith('AS-'));
+  assert('Voucher redemption should deduct spendable Healthpoints', redeemedRow.healthpoints === redeemableStats.healthpoints - cheapestVoucher.points);
+  assert('Voucher redemption should not reduce lifetime Healthpoints', redeemedRow.lifetime_healthpoints === redeemableStats.lifetime_healthpoints);
+
+  const { data: redemptionRows, error: redemptionReadError } = await authenticated
+    .from('voucher_redemptions')
+    .select('voucher_id, redemption_code, redeemed_at, used_at, used_by')
+    .eq('user_id', userId)
+    .eq('voucher_id', cheapestVoucher.id);
+  assertNoError('read voucher redemptions', redemptionReadError);
+  assert('Voucher redemption row was not stored', redemptionRows?.length === 1);
+  assert('Stored redemption code does not match RPC response', redemptionRows[0].redemption_code === redeemedRow.redemption_code);
+  assert('New voucher should not be marked used yet', redemptionRows[0].used_at === null);
+
+  const { data: usedRows, error: usedError } = await authenticated.rpc('mark_voucher_used', {
+    p_redemption_code: redeemedRow.redemption_code,
+    p_used_by: 'ActiveSense verify script',
+  });
+  assertNoError('mark_voucher_used RPC', usedError);
+  const usedRow = Array.isArray(usedRows) ? usedRows[0] : usedRows;
+  assert('mark_voucher_used did not record used_at', Boolean(usedRow.used_at));
+  assert('mark_voucher_used did not record used_by', usedRow.used_by === 'ActiveSense verify script');
 
   if (!admin) {
     console.log('SKIP deletion cascade: set SUPABASE_SERVICE_ROLE_KEY locally to test auth.admin.deleteUser.');

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { RewardVoucher, UserProfile, UserStats, WeeklyActivity, WorkoutSession } from '../types';
+import { RedeemedVoucher, RewardVoucher, UserProfile, UserStats, WeeklyActivity, WorkoutSession } from '../types';
 import { normalizeAvatarConfig } from '../data/avatars';
 import { getCurrentSupabaseUserId, supabase } from './supabase';
 
@@ -13,6 +13,7 @@ const LAST_WORKOUT_DATE_KEY = 'last_workout_date';
 
 export const defaultStats: UserStats = {
   healthpoints: 0,
+  lifetimeHealthpoints: 0,
   streakDays: 0,
   totalWorkouts: 0,
 };
@@ -102,6 +103,7 @@ const toUserProfile = (row: any, medicalConditions: string[] = ['None']): UserPr
 // Convert a Supabase user_stats row into the counters shown throughout the app.
 const toUserStats = (row: any): UserStats => ({
   healthpoints: row?.healthpoints ?? defaultStats.healthpoints,
+  lifetimeHealthpoints: row?.lifetime_healthpoints ?? row?.lifetimeHealthpoints ?? row?.healthpoints ?? defaultStats.lifetimeHealthpoints,
   streakDays: row?.streak_days ?? defaultStats.streakDays,
   totalWorkouts: row?.total_workouts ?? defaultStats.totalWorkouts,
 });
@@ -207,7 +209,7 @@ export const getStats = async (): Promise<UserStats> => {
   if (supabase && userId) {
     const { data, error } = await supabase
       .from('user_stats')
-      .select('healthpoints, streak_days, total_workouts')
+      .select('healthpoints, lifetime_healthpoints, streak_days, total_workouts')
       .eq('user_id', userId)
       .maybeSingle();
     if (error) {
@@ -292,6 +294,7 @@ export const addWorkoutResult = async (
   const updated: UserStats = {
     ...current,
     healthpoints: current.healthpoints + pointsEarned,
+    lifetimeHealthpoints: current.lifetimeHealthpoints + pointsEarned,
     totalWorkouts: current.totalWorkouts + 1,
     streakDays: (await AsyncStorage.getItem(LAST_WORKOUT_DATE_KEY)) === getLocalDateKey(new Date())
       ? current.streakDays
@@ -339,33 +342,52 @@ export const getWeeklyActivity = async (): Promise<WeeklyActivity[]> => {
 };
 
 // Reward redemption state is local for the prototype rewards shop.
-export const getRedeemedVouchers = async (): Promise<number[]> => {
+export const getRedeemedVoucherEntries = async (): Promise<RedeemedVoucher[]> => {
   // Authenticated users read redeemed vouchers from Supabase.
   const userId = await getCurrentSupabaseUserId();
   if (supabase && userId) {
     const { data, error } = await supabase
       .from('voucher_redemptions')
-      .select('voucher_id')
+      .select('voucher_id, redemption_code, redeemed_at, used_at, used_by')
       .eq('user_id', userId);
     if (error) {
       throw error;
     }
-    return (data ?? []).map((row: any) => row.voucher_id);
+    return (data ?? []).map((row: any) => ({
+      voucherId: row.voucher_id,
+      redemptionCode: row.redemption_code,
+      redeemedAt: row.redeemed_at,
+      usedAt: row.used_at,
+      usedBy: row.used_by,
+    }));
   }
 
   const vouchers = await AsyncStorage.getItem(REDEEMED_VOUCHERS_KEY);
-  return vouchers ? parseJSON<number[]>(vouchers, 'redeemed vouchers') : [];
+  if (!vouchers) {
+    return [];
+  }
+  const parsed = parseJSON<Array<number | RedeemedVoucher>>(vouchers, 'redeemed vouchers');
+  return parsed.map((entry) =>
+    typeof entry === 'number'
+      ? { voucherId: entry, redemptionCode: `AS-DEMO-${entry}` }
+      : entry,
+  );
+};
+
+export const getRedeemedVouchers = async (): Promise<number[]> => {
+  const entries = await getRedeemedVoucherEntries();
+  return entries.map((entry) => entry.voucherId);
 };
 
 // Persist which vouchers have already been redeemed on this device.
-export const saveRedeemedVouchers = async (voucherIds: number[]) => {
-  await AsyncStorage.setItem(REDEEMED_VOUCHERS_KEY, JSON.stringify(voucherIds));
+export const saveRedeemedVouchers = async (vouchers: Array<number | RedeemedVoucher>) => {
+  await AsyncStorage.setItem(REDEEMED_VOUCHERS_KEY, JSON.stringify(vouchers));
 };
 
 // Redeem one voucher and deduct points through a database transaction when possible.
 export const redeemVoucher = async (
   voucher: RewardVoucher,
-): Promise<{ stats: UserStats; redeemedVoucherIds: number[] }> => {
+): Promise<{ stats: UserStats; redeemedVoucherIds: number[]; redemptionCode?: string }> => {
   const userId = await getCurrentSupabaseUserId();
   if (supabase && userId) {
     const { data, error } = await supabase.rpc('redeem_voucher', {
@@ -374,16 +396,19 @@ export const redeemVoucher = async (
     if (error) {
       throw error;
     }
-    const stats = toUserStats(Array.isArray(data) ? data[0] : data);
-    const redeemedVoucherIds = await getRedeemedVouchers();
+    const row = Array.isArray(data) ? data[0] : data;
+    const stats = toUserStats(row);
+    const redeemedEntries = await getRedeemedVoucherEntries();
+    const redeemedVoucherIds = redeemedEntries.map((entry) => entry.voucherId);
     await AsyncStorage.setItem(USER_STATS_KEY, JSON.stringify(stats));
-    await AsyncStorage.setItem(REDEEMED_VOUCHERS_KEY, JSON.stringify(redeemedVoucherIds));
-    return { stats, redeemedVoucherIds };
+    await AsyncStorage.setItem(REDEEMED_VOUCHERS_KEY, JSON.stringify(redeemedEntries));
+    return { stats, redeemedVoucherIds, redemptionCode: row?.redemption_code };
   }
 
   // Local fallback mirrors the RPC behavior for simulator runs before Supabase Auth is wired.
   const current = await getStats();
-  const redeemedVoucherIds = await getRedeemedVouchers();
+  const redeemedEntries = await getRedeemedVoucherEntries();
+  const redeemedVoucherIds = redeemedEntries.map((entry) => entry.voucherId);
   if (redeemedVoucherIds.includes(voucher.id)) {
     return { stats: current, redeemedVoucherIds };
   }
@@ -391,8 +416,12 @@ export const redeemVoucher = async (
     throw new Error('Not enough Healthpoints to redeem this reward.');
   }
   const stats = { ...current, healthpoints: current.healthpoints - voucher.points };
-  const nextRedeemedVoucherIds = [...redeemedVoucherIds, voucher.id];
+  const redemptionCode = `AS-DEMO-${voucher.id}-${Date.now().toString(36).toUpperCase()}`;
+  const nextRedeemedEntries = [
+    ...redeemedEntries,
+    { voucherId: voucher.id, redemptionCode, redeemedAt: new Date().toISOString() },
+  ];
   await saveStats(stats);
-  await saveRedeemedVouchers(nextRedeemedVoucherIds);
-  return { stats, redeemedVoucherIds: nextRedeemedVoucherIds };
+  await saveRedeemedVouchers(nextRedeemedEntries);
+  return { stats, redeemedVoucherIds: nextRedeemedEntries.map((entry) => entry.voucherId), redemptionCode };
 };

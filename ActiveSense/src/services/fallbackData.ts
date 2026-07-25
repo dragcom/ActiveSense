@@ -81,7 +81,7 @@ export const fallbackRewardVouchers: RewardVoucher[] = [
 export const fallbackAchievements: Achievement[] = [
   { id: 1, title: '7-Day Streak', emoji: '🔥', desc: 'Complete 7 days in a row', requirementType: 'streakDays', requirementValue: 7 },
   { id: 2, title: 'First Workout', emoji: '🎯', desc: 'Finish your first session', requirementType: 'totalWorkouts', requirementValue: 1 },
-  { id: 3, title: '1000 Points', emoji: '💯', desc: 'Earn 1000 Healthpoints', requirementType: 'healthpoints', requirementValue: 1000 },
+  { id: 3, title: '1000 Points', emoji: '💯', desc: 'Earn 1000 lifetime Healthpoints', requirementType: 'lifetimeHealthpoints', requirementValue: 1000 },
   { id: 4, title: '30-Day Streak', emoji: '🏆', desc: 'Complete 30 consecutive days', requirementType: 'streakDays', requirementValue: 30 },
 ];
 
@@ -107,8 +107,6 @@ export const fallbackOnboardingChoices: OnboardingChoices = {
 export const fallbackProfileGoals = ['Build Strength', 'Improve Form', 'Improve Balance', 'Age Actively'];
 
 export const fallbackProfileMenuItems: ProfileMenuItem[] = [
-  { id: 1, icon: 'settings', label: 'Account Settings', actionKey: 'settings', color: '#14B8A6' },
-  { id: 2, icon: 'bell', label: 'Notifications', badge: '3', actionKey: 'notifications', color: '#14B8A6' },
   { id: 3, icon: 'help-circle', label: 'Help & Support', actionKey: 'support', color: '#14B8A6' },
   { id: 4, icon: 'shield', label: 'Privacy Settings', actionKey: 'privacy', color: '#14B8A6' },
   { id: 5, icon: 'log-out', label: 'Log Out', actionKey: 'logout', color: '#EF4444' },
@@ -116,16 +114,6 @@ export const fallbackProfileMenuItems: ProfileMenuItem[] = [
 
 // Profile links use the same keys as profile_menu_items and bottom legal links.
 export const fallbackInfoPages: Record<string, { title: string; icon: string; body: string }> = {
-  settings: {
-    title: 'Account Settings',
-    icon: 'settings',
-    body: 'Supabase Auth will manage email, password, and account security here. Local prototype data is stored on this device when Supabase Auth is not configured.',
-  },
-  notifications: {
-    title: 'Notifications',
-    icon: 'bell',
-    body: 'Workout reminders, streak prompts, and reward updates will be configured here. Notification preferences will become database-backed user settings.',
-  },
   support: {
     title: 'Help & Support',
     icon: 'help-circle',

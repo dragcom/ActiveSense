@@ -145,6 +145,9 @@ const statKeyFromDatabase = (value: string): keyof UserStats => {
   if (value === 'healthpoints') {
     return 'healthpoints';
   }
+  if (value === 'lifetime_healthpoints') {
+    return 'lifetimeHealthpoints';
+  }
   if (value === 'streak_days') {
     return 'streakDays';
   }
