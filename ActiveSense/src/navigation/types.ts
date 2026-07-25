@@ -3,7 +3,6 @@ export type RootStackParamList = {
   AuthLanding: undefined;
   Login: undefined;
   Onboarding: { mode?: 'signup' | 'edit' } | undefined;
-  InfoPage: { title: string; body: string; icon?: string };
   RewardRedemption: {
     voucherId: number;
     voucherName: string;

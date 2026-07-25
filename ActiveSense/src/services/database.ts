@@ -1,7 +1,6 @@
 import {
   Achievement,
   OnboardingChoices,
-  ProfileMenuItem,
   PoseTrainingSample,
   RewardVoucher,
   UserProfile,
@@ -13,11 +12,9 @@ import {
   fallbackAchievements,
   fallbackDashboardSettings,
   fallbackDefaultWorkoutId,
-  fallbackInfoPages,
   fallbackOnboardingChoices,
   fallbackPoseTrainingSamples,
   fallbackProfileGoals,
-  fallbackProfileMenuItems,
   fallbackRewardVouchers,
   fallbackWorkoutCategories,
   fallbackWorkoutExercises,
@@ -91,28 +88,11 @@ type RewardVoucherRow = {
   category: string;
 };
 
-// Profile menu rows drive the Settings-style list on the Profile screen.
-type ProfileMenuRow = {
-  id: number;
-  label: string;
-  value?: ProfileMenuItem['actionKey'] | null;
-  metadata?: Record<string, unknown> | null;
-  sort_order: number;
-};
-
 // Pose samples are read from Supabase so classifier training data is no longer hardcoded.
 type PoseTrainingSampleRow = {
   id: number;
   label: PoseTrainingSample['label'];
   features: number[];
-};
-
-// Info pages are loaded from Supabase so Profile copy stays editable in data.
-type InfoPageRow = {
-  action_key: string;
-  title: string;
-  icon: string;
-  body: string;
 };
 
 const validPoseLabels: PoseTrainingSample['label'][] = [
@@ -134,11 +114,6 @@ const expectedPoseFeatureCount = 10;
 // Catalog screens should not crash if a bad color lands in Supabase.
 const safeColor = (value: string | null | undefined, fallback: string) =>
   /^#[0-9A-Fa-f]{6}$/.test(value ?? '') ? (value as string) : fallback;
-
-const metadataString = (metadata: Record<string, unknown> | null | undefined, key: string) => {
-  const value = metadata?.[key];
-  return typeof value === 'string' ? value : undefined;
-};
 
 // Database requirement names are snake_case, while the app state is camelCase.
 const statKeyFromDatabase = (value: string): keyof UserStats => {
@@ -466,27 +441,6 @@ export const db = {
     });
   },
 
-  // Profile screen menu is data-driven so actions can be added without changing UI code.
-  async getProfileMenuItems() {
-    return readOrFallback('profile menu', fallbackProfileMenuItems, async () => {
-      const { data, error } = await requireSupabase()
-        .from('app_options')
-        .select('id, label, value, metadata, sort_order, app_option_groups!inner(key)')
-        .eq('app_option_groups.key', 'profile_menu_items')
-        .order('sort_order', { ascending: true });
-      assertNoError(error);
-      const menu = ((data as ProfileMenuRow[] | null) ?? []).map((item) => ({
-        id: item.id,
-        icon: metadataString(item.metadata, 'icon') ?? 'settings',
-        label: item.label,
-        badge: metadataString(item.metadata, 'badge'),
-        actionKey: item.value ?? undefined,
-        color: safeColor(metadataString(item.metadata, 'color'), '#14B8A6'),
-      }));
-      return requireRows('profile menu items', menu);
-    });
-  },
-
   // Home reads dashboard settings such as the displayed daily goal from app_settings.
   async getDashboardSettings() {
     return readOrFallback('dashboard settings', fallbackDashboardSettings, async () => {
@@ -503,29 +457,4 @@ export const db = {
     });
   },
 
-  // Profile and legal links resolve their title, icon, and body from app_pages.
-  async getInfoPage(actionKey: string) {
-    const fallback = fallbackInfoPages[actionKey] ?? {
-      title: 'Information',
-      icon: 'info',
-      body: 'This page has not been configured in Supabase yet.',
-    };
-    return readOrFallback('info page', fallback, async () => {
-      const { data, error } = await requireSupabase()
-        .from('app_pages')
-        .select('action_key, title, icon, body')
-        .eq('action_key', actionKey)
-        .eq('page_type', 'info')
-        .maybeSingle();
-      assertNoError(error);
-      const page = data as InfoPageRow | null;
-      return page
-        ? {
-            title: page.title,
-            icon: page.icon,
-            body: page.body,
-          }
-        : fallback;
-    });
-  },
 };

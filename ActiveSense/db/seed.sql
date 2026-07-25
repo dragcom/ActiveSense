@@ -115,8 +115,7 @@ insert into public.app_option_groups (id, key, label, group_type, sort_order) va
   (5, 'medical_cardiovascular_metabolic', 'Cardiovascular & Metabolic', 'medical_condition', 50),
   (6, 'medical_respiratory', 'Respiratory', 'medical_condition', 60),
   (7, 'medical_other', 'Other', 'medical_condition', 70),
-  (8, 'profile_goals', 'Profile goals', 'profile', 80),
-  (9, 'profile_menu_items', 'Profile menu items', 'profile', 90)
+  (8, 'profile_goals', 'Profile goals', 'profile', 80)
 on conflict (id) do update set
   key = excluded.key,
   label = excluded.label,
@@ -161,38 +160,19 @@ insert into public.app_settings (key, value) values
   ('dashboard_settings', '{"goal_label": "30 min"}'::jsonb)
 on conflict (key) do update set value = excluded.value;
 
--- Seed reusable Profile and legal information pages.
+-- Remove placeholder Profile/legal pages that no longer have screens in the app.
 delete from public.app_pages
-where action_key in ('settings', 'notifications');
+where action_key in ('settings', 'notifications', 'support', 'privacy', 'profile_photo', 'terms', 'contact');
 
-insert into public.app_pages (action_key, page_type, title, icon, body, sort_order) values
-  ('support', 'info', 'Help & Support', 'help-circle', 'For the prototype, support content explains how ActiveSense uses local pose estimation, Healthpoints, and tailored workouts. A future support center can connect FAQs and contact forms.', 30),
-  ('privacy', 'info', 'Privacy Settings', 'shield', 'ActiveSense processes camera frames locally for pose landmarks. Raw workout video is not uploaded in this prototype; Supabase should store profile, workout, reward, and landmark summary metadata only.', 40),
-  ('profile_photo', 'info', 'Profile Photo', 'camera', 'Profile photo upload will connect to Supabase Storage. The camera used during workouts remains separate and is used for local pose landmarks.', 50),
-  ('terms', 'info', 'Terms', 'file-text', 'Prototype terms: ActiveSense is an educational NUS Orbital prototype and should not replace professional medical advice. Stop exercising if you feel pain, dizziness, or discomfort.', 60),
-  ('contact', 'info', 'Contact', 'mail', 'Contact and feedback forms will be connected when backend messaging is added. For now, this page confirms the link is wired.', 70)
-on conflict (action_key) do update set
-  page_type = excluded.page_type,
-  title = excluded.title,
-  icon = excluded.icon,
-  body = excluded.body,
-  sort_order = excluded.sort_order;
-
--- Seed settings-style rows shown in the Profile menu.
+-- Remove settings-style Profile rows; Profile now shows only implemented actions.
 delete from public.app_options
 using public.app_option_groups
 where app_options.group_id = app_option_groups.id
   and app_option_groups.key = 'profile_menu_items'
-  and app_options.value in ('settings', 'notifications');
+  and app_options.value in ('settings', 'notifications', 'support', 'privacy', 'logout');
 
-insert into public.app_options (group_id, label, value, metadata, sort_order) values
-  (9, 'Help & Support', 'support', '{"legacy_id":3,"icon":"help-circle","color":"#14B8A6"}'::jsonb, 30),
-  (9, 'Privacy Settings', 'privacy', '{"legacy_id":4,"icon":"shield","color":"#14B8A6"}'::jsonb, 40),
-  (9, 'Log Out', 'logout', '{"legacy_id":5,"icon":"log-out","color":"#EF4444"}'::jsonb, 50)
-on conflict (group_id, label) do update set
-  value = excluded.value,
-  metadata = excluded.metadata,
-  sort_order = excluded.sort_order;
+delete from public.app_option_groups
+where key = 'profile_menu_items';
 
 select setval(pg_get_serial_sequence('public.app_option_groups', 'id'), (select max(id) from public.app_option_groups));
 select setval(pg_get_serial_sequence('public.app_options', 'id'), (select max(id) from public.app_options));

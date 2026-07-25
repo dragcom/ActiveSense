@@ -60,6 +60,7 @@ declare
   v_session_key text := nullif(p_client_session_id, '');
   v_workout_exists boolean;
   v_workout_points integer;
+  v_today date := timezone('Asia/Singapore', now())::date;
 begin
   if v_user_id is null then
     raise exception 'Authentication required to complete a workout.';
@@ -141,10 +142,11 @@ begin
     lifetime_healthpoints = user_stats.lifetime_healthpoints + p_points_earned,
     total_workouts = user_stats.total_workouts + 1,
     streak_days = case
-      when user_stats.last_workout_date = current_date then user_stats.streak_days
-      else user_stats.streak_days + 1
+      when user_stats.last_workout_date = v_today then user_stats.streak_days
+      when user_stats.last_workout_date = v_today - 1 then user_stats.streak_days + 1
+      else 1
     end,
-    last_workout_date = current_date,
+    last_workout_date = v_today,
     updated_at = now()
   where user_id = v_user_id
   returning user_stats.healthpoints, user_stats.lifetime_healthpoints, user_stats.streak_days, user_stats.total_workouts

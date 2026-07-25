@@ -25,6 +25,7 @@ const readEnvFile = (filePath) => {
 
 const env = {
   ...readEnvFile(path.join(root, '.env')),
+  ...readEnvFile(path.join(root, '.env.local')),
   ...process.env,
 };
 
@@ -239,6 +240,7 @@ const main = async () => {
   assert('Workout RPC did not increment total workouts', statsAfter.total_workouts === 1);
   assert('Workout RPC did not award Healthpoints', statsAfter.healthpoints === 100);
   assert('Workout RPC did not increment lifetime Healthpoints', statsAfter.lifetime_healthpoints === 100);
+  assert('Workout RPC did not start the workout streak', statsAfter.streak_days === 1);
 
   const { data: cheapestVouchers, error: cheapestVoucherError } = await authenticated
     .from('reward_vouchers')
@@ -261,6 +263,7 @@ const main = async () => {
     assertNoError('extra complete_workout RPC', extraWorkoutError);
     redeemableStats = Array.isArray(extraStats) ? extraStats[0] : extraStats;
   }
+  assert('Multiple same-day workouts should not inflate the streak', redeemableStats.streak_days === 1);
 
   console.log('Testing redeem_voucher RPC and redemption-code tracking...');
   const { data: redeemed, error: redeemError } = await authenticated.rpc('redeem_voucher', {

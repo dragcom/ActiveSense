@@ -3,7 +3,6 @@ import {
   MedicalConditionOption,
   OnboardingChoices,
   PoseTrainingSample,
-  ProfileMenuItem,
   RewardVoucher,
   Workout,
   WorkoutExercise,
@@ -105,41 +104,6 @@ export const fallbackOnboardingChoices: OnboardingChoices = {
 };
 
 export const fallbackProfileGoals = ['Build Strength', 'Improve Form', 'Improve Balance', 'Age Actively'];
-
-export const fallbackProfileMenuItems: ProfileMenuItem[] = [
-  { id: 3, icon: 'help-circle', label: 'Help & Support', actionKey: 'support', color: '#14B8A6' },
-  { id: 4, icon: 'shield', label: 'Privacy Settings', actionKey: 'privacy', color: '#14B8A6' },
-  { id: 5, icon: 'log-out', label: 'Log Out', actionKey: 'logout', color: '#EF4444' },
-];
-
-// Profile links use the same keys as profile_menu_items and bottom legal links.
-export const fallbackInfoPages: Record<string, { title: string; icon: string; body: string }> = {
-  support: {
-    title: 'Help & Support',
-    icon: 'help-circle',
-    body: 'Support content explains how ActiveSense uses local pose estimation, Healthpoints, and tailored workouts. A future support center can connect FAQs and contact forms.',
-  },
-  privacy: {
-    title: 'Privacy Settings',
-    icon: 'shield',
-    body: 'ActiveSense processes camera frames locally for pose landmarks. Raw workout video is not uploaded in this prototype; Supabase should store profile, workout, reward, and landmark summary metadata only.',
-  },
-  profile_photo: {
-    title: 'Profile Photo',
-    icon: 'camera',
-    body: 'Profile photo upload will connect to Supabase Storage. The workout camera remains separate and is used for local pose landmarks.',
-  },
-  terms: {
-    title: 'Terms',
-    icon: 'file-text',
-    body: 'Prototype terms: ActiveSense is an educational NUS Orbital prototype and should not replace professional medical advice. Stop exercising if you feel pain, dizziness, or discomfort.',
-  },
-  contact: {
-    title: 'Contact',
-    icon: 'mail',
-    body: 'Contact and feedback forms will be connected when backend messaging is added. For now, this page confirms the link is wired.',
-  },
-};
 
 export const fallbackDashboardSettings = { goalLabel: '30 min' };
 export const fallbackDefaultWorkoutId = 1;

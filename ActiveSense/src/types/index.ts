@@ -148,16 +148,6 @@ export type MedicalConditionOption = {
   label: string;
 };
 
-// ProfileMenuItem keeps the Profile screen's menu rows data-driven.
-export type ProfileMenuItem = {
-  id: number;
-  icon: string;
-  label: string;
-  badge?: string;
-  actionKey?: 'support' | 'privacy' | 'logout';
-  color: string;
-};
-
 // WorkoutSession is the local history entry saved when a workout finishes.
 export type WorkoutSession = {
   id: string;

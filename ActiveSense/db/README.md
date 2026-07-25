@@ -13,7 +13,7 @@ The schema keeps the model intentionally small and relational:
 - `pose_training_samples`: classifier examples linked to `exercise_types`.
 - `user_profiles`, `user_profile_medical_conditions`, `user_stats`, `workout_sessions`, `workout_session_exercise_results`: normalized user profile, health constraints, progress, and future per-exercise analytics.
 - `reward_vouchers`, `voucher_redemptions`, `achievements`: Healthpoints rewards and milestones.
-- `app_option_groups`, `app_options`, `app_settings`, `app_pages`: configurable app copy/options without many tiny tables.
+- `app_option_groups`, `app_options`, `app_settings`, `app_pages`: configurable app choices/settings without many tiny tables.
 
 The seed file inserts the current strength and healthy-ageing catalogs and deactivates older workout rows without deleting historical session records.
 
@@ -56,7 +56,7 @@ select * from public.mark_voucher_used('AS-EXAMPLECODE', 'NTUC demo counter');
    npm run db:verify
    ```
 
-   To also verify that deleting a Supabase Auth user cascades through all user-owned public rows, put a local-only service-role key in `.env`:
+   To also verify that deleting a Supabase Auth user cascades through all user-owned public rows, put a local-only service-role key in `.env.local`:
 
    ```sh
    SUPABASE_SERVICE_ROLE_KEY=<service-role-key>

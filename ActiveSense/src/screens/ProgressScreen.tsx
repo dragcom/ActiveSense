@@ -109,7 +109,7 @@ export default function ProgressScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
         {/* Header highlights the currency users earn from workouts. */}
         <LinearGradient colors={colors.gradient.primary} style={styles.header}>
           <Text style={styles.headerTitle}>Your Progress</Text>

@@ -34,7 +34,18 @@ const parseJSON = <T>(value: string, context: string): T => {
 const normalizePrivacyMode = (privacyMode?: string): UserProfile['privacyMode'] =>
   privacyMode?.toLowerCase() === 'camera' ? 'Camera' : 'Avatar';
 
-const getLocalDateKey = (date: Date) => date.toISOString().slice(0, 10);
+const getLocalDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getYesterdayLocalDateKey = () => {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return getLocalDateKey(yesterday);
+};
 
 const readMedicalConditionLabels = async (userId: string): Promise<string[]> => {
   if (!supabase) {
@@ -291,14 +302,18 @@ export const addWorkoutResult = async (
   }
 
   const current = await getStats();
+  const todayKey = getLocalDateKey(new Date());
+  const lastWorkoutDate = await AsyncStorage.getItem(LAST_WORKOUT_DATE_KEY);
   const updated: UserStats = {
     ...current,
     healthpoints: current.healthpoints + pointsEarned,
     lifetimeHealthpoints: current.lifetimeHealthpoints + pointsEarned,
     totalWorkouts: current.totalWorkouts + 1,
-    streakDays: (await AsyncStorage.getItem(LAST_WORKOUT_DATE_KEY)) === getLocalDateKey(new Date())
+    streakDays: lastWorkoutDate === todayKey
       ? current.streakDays
-      : current.streakDays + 1,
+      : lastWorkoutDate === getYesterdayLocalDateKey()
+        ? current.streakDays + 1
+        : 1,
   };
   const sessions = await getWorkoutSessions();
   const nextSession: WorkoutSession = {
@@ -310,7 +325,7 @@ export const addWorkoutResult = async (
     processedLocally: true,
   };
   await saveStats(updated);
-  await AsyncStorage.setItem(LAST_WORKOUT_DATE_KEY, getLocalDateKey(new Date()));
+  await AsyncStorage.setItem(LAST_WORKOUT_DATE_KEY, todayKey);
   await saveWorkoutSessions([nextSession, ...sessions]);
   return updated;
 };

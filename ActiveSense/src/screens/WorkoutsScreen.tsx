@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   scrollView: { flex: 1 },
-  scrollContent: { padding: 20, paddingBottom: 100, gap: 16 },
+  scrollContent: { padding: 20, paddingBottom: 32, gap: 16 },
   workoutCard: {
     backgroundColor: colors.background.card,
     borderRadius: 24,
