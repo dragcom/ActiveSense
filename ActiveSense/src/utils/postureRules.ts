@@ -15,9 +15,7 @@ export type ExerciseType =
   | 'torso_twist'
   | 'side_bend'
   | 'overhead_reach'
-  | 'single_leg_stand'
-  | 'quad_stretch'
-  | 'triceps_stretch';
+  | 'single_leg_stand';
 
 type Landmark = {
   x: number;
@@ -332,37 +330,6 @@ const rulesMap: Record<string, (landmarks: Landmark[]) => PostureResult> = {
     return createStaticResult('Lift one foot slightly off the ground.', 'Lift one foot', 0.75);
   },
 
-  'quad_stretch': (landmarks) => {
-    if (fullBodyRequired.some((i) => !visible(landmarks[i]))) {
-      return createStaticResult('Step back so full body is visible.', undefined, 0);
-    }
-
-    const { leftHip, leftKnee, leftAnkle, rightHip, rightKnee, rightAnkle } = indexes;
-    const leftKneeAngle = calculateAngle(landmarks[leftHip], landmarks[leftKnee], landmarks[leftAnkle]);
-    const rightKneeAngle = calculateAngle(landmarks[rightHip], landmarks[rightKnee], landmarks[rightAnkle]);
-
-    if (leftKneeAngle < 110 || rightKneeAngle < 110) {
-      return createStaticResult('Holding quad stretch!', undefined, 0.88);
-    }
-    return createStaticResult('Pull heel back toward glutes.', 'Bend knee', 0.75);
-  },
-
-  'triceps_stretch': (landmarks) => {
-    if (upperBodyRequired.some((i) => !visible(landmarks[i]))) {
-      return createStaticResult('Keep upper body in frame.', undefined, 0);
-    }
-
-    const { leftShoulder, rightShoulder, leftElbow, rightElbow } = indexes;
-    const shoulderWidth = Math.max(0.001, distance(landmarks[leftShoulder], landmarks[rightShoulder]));
-
-    const leftElbowUp = (landmarks[leftShoulder].y - landmarks[leftElbow].y) / shoulderWidth > 0.05;
-    const rightElbowUp = (landmarks[rightShoulder].y - landmarks[rightElbow].y) / shoulderWidth > 0.05;
-
-    if (leftElbowUp || rightElbowUp) {
-      return createStaticResult('Holding triceps stretch!', undefined, 0.86);
-    }
-    return createStaticResult('Raise elbow overhead to stretch.', 'Raise elbow', 0.75);
-  },
 };
 
 export const evaluatePosture = (exerciseName: string, landmarks: Landmark[]): PostureResult => {

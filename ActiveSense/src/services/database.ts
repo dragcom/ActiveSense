@@ -97,15 +97,14 @@ type PoseTrainingSampleRow = {
 
 const validPoseLabels: PoseTrainingSample['label'][] = [
   'squat',
-  'pushup',
-  'lunge',
   'sit_to_stand',
-  'hip_extension',
+  'calf_raise',
   'side_leg_raise',
-  'single_leg_stand',
   'march',
-  'quad_stretch',
-  'triceps_stretch',
+  'torso_twist',
+  'side_bend',
+  'overhead_reach',
+  'single_leg_stand',
 ];
 
 // The pose classifier currently extracts ten numeric features from each 33-point frame.

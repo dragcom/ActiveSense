@@ -23,16 +23,15 @@ const iconMap: Record<string, FeatherName> = {
   '🏆': 'award',
   activity: 'activity',
   heart: 'heart',
-  pushup: 'activity',
   squat: 'chevrons-down',
-  lunge: 'corner-down-right',
   sit_to_stand: 'arrow-up',
-  hip_extension: 'corner-up-left',
+  calf_raise: 'chevron-up',
   side_leg_raise: 'move',
   single_leg_stand: 'shield',
   march: 'repeat',
-  quad_stretch: 'corner-down-left',
-  triceps_stretch: 'maximize-2',
+  torso_twist: 'rotate-cw',
+  side_bend: 'corner-down-right',
+  overhead_reach: 'arrow-up-circle',
 };
 
 // Category names can also request icons when there is no direct emoji match.
@@ -41,6 +40,7 @@ const categoryMap: Record<string, FeatherName> = {
   Groceries: 'shopping-cart',
   Health: 'plus-circle',
   'Healthy Ageing': 'heart',
+  Mobility: 'repeat',
   Sports: 'activity',
   Strength: 'activity',
 };
