@@ -58,6 +58,13 @@ const assert = (label, condition) => {
   }
 };
 
+const localDateKey = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const tableCount = async (client, table, filterColumn, filterValue) => {
   let query = client.from(table).select('*', { count: 'exact', head: true });
   if (filterColumn) {
@@ -264,6 +271,17 @@ const main = async () => {
     redeemableStats = Array.isArray(extraStats) ? extraStats[0] : extraStats;
   }
   assert('Multiple same-day workouts should not inflate the streak', redeemableStats.streak_days === 1);
+
+  const { data: sessionRows, error: sessionReadError } = await authenticated
+    .from('workout_sessions')
+    .select('points_earned, completed_at')
+    .eq('user_id', userId);
+  assertNoError('read workout sessions for weekly activity', sessionReadError);
+  const todayKey = localDateKey(new Date());
+  const todaysSessionPoints = (sessionRows ?? [])
+    .filter((session) => localDateKey(new Date(session.completed_at)) === todayKey)
+    .reduce((sum, session) => sum + session.points_earned, 0);
+  assert('Workout sessions were not stored for weekly activity', todaysSessionPoints === redeemableStats.lifetime_healthpoints);
 
   console.log('Testing redeem_voucher RPC and redemption-code tracking...');
   const { data: redeemed, error: redeemError } = await authenticated.rpc('redeem_voucher', {
