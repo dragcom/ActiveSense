@@ -82,7 +82,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
         {/* Header gives the user's identity and quick edit access. */}
         <LinearGradient colors={colors.gradient.primary} style={styles.header}>

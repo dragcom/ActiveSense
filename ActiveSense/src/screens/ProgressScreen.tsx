@@ -108,7 +108,7 @@ export default function ProgressScreen() {
   const totalWeekly = weeklyData.reduce((sum, day) => sum + day.points, 0);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
         {/* Header highlights the currency users earn from workouts. */}
         <LinearGradient colors={colors.gradient.primary} style={styles.header}>

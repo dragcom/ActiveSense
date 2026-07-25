@@ -91,7 +91,7 @@ export default function HomeScreen() {
   if (loading) {
     // Keep the tab usable while local storage and catalog data load.
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
         <View style={styles.loader}>
           <ActivityIndicator size="large" color={colors.primary.teal} />
         </View>
@@ -102,7 +102,7 @@ export default function HomeScreen() {
   if (loadError || !highlightWorkout) {
     // A failed read should leave the user with a clear action instead of a stuck tab.
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
         <View style={styles.emptyState}>
           <Feather name="refresh-cw" size={28} color={colors.primary.teal} />
           <Text style={styles.emptyTitle}>Home data unavailable</Text>
@@ -124,7 +124,7 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* The header gives the user a quick motivational snapshot. */}
         <LinearGradient colors={colors.gradient.primary} style={styles.header}>
