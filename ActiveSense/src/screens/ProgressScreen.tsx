@@ -3,7 +3,7 @@ import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import IconBadge from '../components/IconBadge';
@@ -24,6 +24,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 // ProgressScreen shows Healthpoints, weekly activity, rewards, and achievements.
 export default function ProgressScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const isFocused = useIsFocused();
   // Progress data comes from Supabase when signed in, with local fallback for prototype runs.
   const [stats, setStats] = useState<UserStats>(defaultStats);
   const [weeklyData, setWeeklyData] = useState<WeeklyActivity[]>([]);
@@ -34,6 +35,7 @@ export default function ProgressScreen() {
   const [pendingVoucherIds, setPendingVoucherIds] = useState<number[]>([]);
 
   useEffect(() => {
+    let mounted = true;
     // Load stats and reward catalog together so the shop can render immediately.
     const loadProgress = async () => {
       try {
@@ -45,6 +47,9 @@ export default function ProgressScreen() {
         const storedRedeemedEntries = await getRedeemedVoucherEntries();
         const storedRedeemedVouchers = storedRedeemedEntries.map((entry) => entry.voucherId);
         const storedAchievements = await db.getAchievements(storedStats);
+        if (!mounted) {
+          return;
+        }
         setStats(storedStats);
         setWeeklyData(activity);
         setVouchers(rewardVouchers);
@@ -56,8 +61,14 @@ export default function ProgressScreen() {
       }
     };
 
-    loadProgress();
-  }, []);
+    if (isFocused) {
+      loadProgress();
+    }
+
+    return () => {
+      mounted = false;
+    };
+  }, [isFocused]);
 
   const openRedemption = (voucher: RewardVoucher, redemptionCode?: string) => {
     const existingEntry = redeemedVoucherEntries.find((entry) => entry.voucherId === voucher.id);
