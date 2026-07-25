@@ -44,7 +44,6 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const [hasAvatarFailed, setHasAvatarFailed] = useState(false);
   const avatarWebViewRef = useRef<WorkoutAvatarWebViewHandle>(null);
   const poseClassifierRef = useRef<ReturnType<typeof createPoseClassifier> | null>(null);
-  // Refs hold timing flags so camera frames do not trigger extra renders.
   const poseCountRef = useRef(0);
   const startTimeRef = useRef(Date.now());
   const lastAvatarFrameAtRef = useRef(0);
@@ -53,7 +52,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const spokenCueTimesRef = useRef<Record<string, number>>({});
   const poseCounterRef = useRef(createWorkoutPoseCounterState());
   const closingRef = useRef(false);
-
+  
   const currentEx = exercises[currentExercise];
   const targetReps = currentEx ? currentEx.sets * currentEx.reps : 1;
   const exerciseComplete = reps >= targetReps;
@@ -231,31 +230,6 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
     }
   }, [currentExercise, currentEx, speakWorkoutCue, targetReps]);
 
-  const handleManualRep = () => {
-    // Simulator and unsupported native builds can still walk through the workout flow.
-    if (isPaused) {
-      return;
-    }
-    resetWorkoutPoseCounter(poseCounterRef.current);
-    setReps((current) => {
-      const next = addManualWorkoutRep(current, targetReps);
-      if (next !== current) {
-        speakWorkoutCue(`${next}`, 600, true);
-      }
-      return next;
-    });
-  };
-
-  const handleResetReps = () => {
-    resetWorkoutPoseCounter(poseCounterRef.current);
-    setReps(0);
-  };
-
-  const handleTogglePause = () => {
-    resetWorkoutPoseCounter(poseCounterRef.current);
-    setIsPaused((current) => !current);
-  };
-
   const handleClose = useCallback(() => {
     if (closingRef.current) {
       return;
@@ -281,6 +255,34 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
       navigation.replace('Main');
     });
   }, [navigation]);
+
+  const handleAvatarReady = useCallback(() => setHasAvatarFailed(false), []);
+  const handleAvatarFailure = useCallback(() => setHasAvatarFailed(true), []);
+
+  const handleManualRep = () => {
+    // Simulator and unsupported native builds can still walk through the workout flow.
+    if (isPaused) {
+      return;
+    }
+    resetWorkoutPoseCounter(poseCounterRef.current);
+    setReps((current) => {
+      const next = addManualWorkoutRep(current, targetReps);
+      if (next !== current) {
+        speakWorkoutCue(`${next}`, 600, true);
+      }
+      return next;
+    });
+  };
+
+  const handleResetReps = () => {
+    resetWorkoutPoseCounter(poseCounterRef.current);
+    setReps(0);
+  };
+
+  const handleTogglePause = () => {
+    resetWorkoutPoseCounter(poseCounterRef.current);
+    setIsPaused((current) => !current);
+  };
 
   const handleNext = async () => {
     // Advance between exercises or save the final workout result.
@@ -351,8 +353,6 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
       ? 'Tracking pose'
       : 'Looking for full pose';
   const trackerText = `${posePointCount}/${currentEx.targetLandmarks} points`;
-  const handleAvatarReady = useCallback(() => setHasAvatarFailed(false), []);
-  const handleAvatarFailure = useCallback(() => setHasAvatarFailed(true), []);
 
   return (
     <View style={styles.container}>
@@ -509,7 +509,9 @@ const styles = StyleSheet.create({
     left: 0,
     backgroundColor: colors.background.dark,
   },
-  avatarWebView: { flex: 1, backgroundColor: 'transparent' },
+  avatarWebView: { 
+    flex: 1, 
+    backgroundColor: 'transparent'},
   cameraPreview: { flex: 1, width: '100%', height: '100%' },
   hiddenPreview: { opacity: 0, pointerEvents: 'none' },
   topShade: { position: 'absolute', left: 0, right: 0, top: 0, height: 260 },

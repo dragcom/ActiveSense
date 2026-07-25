@@ -24,6 +24,7 @@
     "expo-speech": "~56.0.3",
     "expo-status-bar": "~56.0.4",
     "expo-system-ui": "^56.0.5",
+    "kalidokit": "^1.1.5",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.85.3",
@@ -37,9 +38,9 @@
     "three-ios": "npm:three@^0.162.0"
   },
   "devDependencies": {
+    "@react-native-community/cli": "latest",
     "@types/react": "~19.2.2",
-    "typescript": "~6.0.3",
-    "@react-native-community/cli": "latest"
+    "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",

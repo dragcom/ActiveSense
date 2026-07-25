@@ -10,24 +10,24 @@ import IconBadge from '../components/IconBadge';
 import { db } from '../services/database';
 import {
   defaultStats,
+  getDailyActivity,
   getRedeemedVoucherEntries,
   getStats,
-  getWeeklyActivity,
   redeemVoucher,
+  DailyActivity,
 } from '../services/storage';
-import { Achievement, RedeemedVoucher, RewardVoucher, UserStats, WeeklyActivity } from '../types';
+import { Achievement, RedeemedVoucher, RewardVoucher, UserStats } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type AchievementDisplay = Achievement & { unlocked: boolean };
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-// ProgressScreen shows Healthpoints, weekly activity, rewards, and achievements.
 export default function ProgressScreen() {
   const navigation = useNavigation<NavigationProp>();
   const isFocused = useIsFocused();
-  // Progress data comes from Supabase when signed in, with local fallback for prototype runs.
+  
   const [stats, setStats] = useState<UserStats>(defaultStats);
-  const [weeklyData, setWeeklyData] = useState<WeeklyActivity[]>([]);
+  const [dailyData, setDailyData] = useState<DailyActivity[]>([]);
   const [vouchers, setVouchers] = useState<RewardVoucher[]>([]);
   const [achievements, setAchievements] = useState<AchievementDisplay[]>([]);
   const [redeemedVouchers, setRedeemedVouchers] = useState<number[]>([]);
@@ -36,22 +36,20 @@ export default function ProgressScreen() {
 
   useEffect(() => {
     let mounted = true;
-    // Load stats and reward catalog together so the shop can render immediately.
     const loadProgress = async () => {
       try {
         const [storedStats, activity, rewardVouchers] = await Promise.all([
           getStats(),
-          getWeeklyActivity(),
+          getDailyActivity(),
           db.getRewardVouchers(),
         ]);
         const storedRedeemedEntries = await getRedeemedVoucherEntries();
         const storedRedeemedVouchers = storedRedeemedEntries.map((entry) => entry.voucherId);
         const storedAchievements = await db.getAchievements(storedStats);
-        if (!mounted) {
-          return;
-        }
+        if (!mounted) return;
+
         setStats(storedStats);
-        setWeeklyData(activity);
+        setDailyData(activity);
         setVouchers(rewardVouchers);
         setRedeemedVouchers(storedRedeemedVouchers);
         setRedeemedVoucherEntries(storedRedeemedEntries);
@@ -90,7 +88,6 @@ export default function ProgressScreen() {
   };
 
   const handleRedeem = async (voucher: RewardVoucher) => {
-    // Do not redeem if the user cannot afford it or already claimed it.
     if (stats.healthpoints < voucher.points || pendingVoucherIds.includes(voucher.id)) {
       return;
     }
@@ -99,7 +96,6 @@ export default function ProgressScreen() {
       return;
     }
     try {
-      // The service handles point deduction through Supabase RPC or local fallback.
       setPendingVoucherIds((current) => [...current, voucher.id]);
       const { stats: nextStats, redeemedVoucherIds, redemptionCode } = await redeemVoucher(voucher);
       const nextRedeemedEntries = await getRedeemedVoucherEntries();
@@ -115,13 +111,15 @@ export default function ProgressScreen() {
     }
   };
 
-  const maxPoints = Math.max(100, ...weeklyData.map((day) => day.points));
-  const totalWeekly = weeklyData.reduce((sum, day) => sum + day.points, 0);
+  const getPoints = (day: DailyActivity) => day.points ?? 0;
+
+  const maxPoints = Math.max(1, ...dailyData.map(getPoints));
+  const totalDailyPoints = dailyData.reduce((sum, day) => sum + getPoints(day), 0);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
-        {/* Header highlights the currency users earn from workouts. */}
+        {/* Header */}
         <LinearGradient colors={colors.gradient.primary} style={styles.header}>
           <Text style={styles.headerTitle}>Your Progress</Text>
           <View style={styles.healthpointsCard}>
@@ -137,35 +135,72 @@ export default function ProgressScreen() {
         </LinearGradient>
 
         <View style={{ padding: 16 }}>
-          {/* Weekly chart visualizes recent workout effort. */}
+          {/* Daily Points Bar Chart */}
           <View style={styles.chartCard}>
             <View style={styles.chartHeader}>
-              <Text style={styles.chartTitle}>Weekly Activity</Text>
-              <Feather name="trending-up" size={20} color="#10B981" />
+              <View>
+                <Text style={styles.chartTitle}>Daily Activity</Text>
+                <Text style={styles.chartSubtitle}>Healthpoints earned over time</Text>
+              </View>
+              <Feather name="activity" size={20} color={colors.primary.teal} />
             </View>
-            <View style={styles.chart}>
-              {(weeklyData.length ? weeklyData : [{ id: 'empty', day: '--', points: 0 }]).map((day) => {
-                const heightPercent = (day.points / maxPoints) * 100;
-                return (
-                  <View key={day.id} style={styles.barContainer}>
-                    <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-                      <LinearGradient
-                        colors={colors.gradient.success}
-                        style={[styles.bar, { height: `${heightPercent}%` }]}
-                      />
+
+            {/* Horizontal Scroll View */}
+            {dailyData.length === 0 ? (
+              <View style={styles.emptyChartState}>
+                <Text style={styles.emptyText}>No workout points earned yet.</Text>
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chartScrollContainer}
+              >
+                {dailyData.map((day) => {
+                  const points = getPoints(day);
+                  const heightPercent = points > 0 ? Math.max((points / maxPoints) * 100, 18) : 0;
+
+                  return (
+                    <View key={day.id} style={styles.barContainer}>
+                      {/* Points badge above bar (invisible on 0-point days) */}
+                      <Text style={[styles.barValueText, points === 0 && { opacity: 0 }]}>
+                        {points}
+                      </Text>
+
+                      {/* Empty track pill background stays visible for ALL days */}
+                      <View style={styles.barTrack}>
+                        {points > 0 && (
+                          <LinearGradient
+                            colors={colors.gradient.success}
+                            style={[styles.bar, { height: `${heightPercent}%` }]}
+                          />
+                        )}
+                      </View>
+
+                      {/* Dynamic date label (e.g. "Jul 21", "Jul 22", "Today") */}
+                      <Text
+                        style={[
+                          styles.dayLabel,
+                          day.dayLabel === 'Today' && { color: colors.primary.teal, fontWeight: '700' },
+                        ]}
+                      >
+                        {day.dayLabel}
+                      </Text>
                     </View>
-                    <Text style={styles.dayLabel}>{day.day}</Text>
-                  </View>
-                );
-              })}
-            </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+
             <View style={styles.chartSummary}>
-              <Text style={styles.chartSummaryValue}>{totalWeekly}</Text>
-              <Text style={styles.chartSummaryLabel}>points earned this week</Text>
+              <Text style={styles.chartSummaryValue}>{totalDailyPoints.toLocaleString()} HP</Text>
+              <Text style={styles.chartSummaryLabel}>
+                total Healthpoints earned from logged workouts
+              </Text>
             </View>
           </View>
 
-          {/* Rewards Shop spends Healthpoints and updates local progress state. */}
+          {/* Rewards Shop */}
           <View style={{ marginTop: 24 }}>
             <View style={styles.sectionHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -231,7 +266,7 @@ export default function ProgressScreen() {
             })}
           </View>
 
-          {/* Achievements compare saved stats against fixed milestone requirements. */}
+          {/* Achievements */}
           <View style={{ marginTop: 24 }}>
             <View style={styles.sectionHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -302,12 +337,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#DCFCE7',
   },
-  chartHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
+  chartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   chartTitle: { fontSize: 16, fontWeight: '700', color: colors.text.primary },
-  chart: { height: 200, flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginBottom: 16 },
-  barContainer: { flex: 1, height: '100%', alignItems: 'center' },
-  bar: { width: '100%', borderTopLeftRadius: 8, borderTopRightRadius: 8 },
-  dayLabel: { fontSize: 12, fontWeight: '600', color: colors.text.secondary, marginTop: 8 },
+  chartSubtitle: { fontSize: 12, color: colors.text.secondary, marginTop: 2 },
+  chartScrollContainer: { height: 160, alignItems: 'flex-end', paddingRight: 8, marginBottom: 16 },
+  emptyChartState: { height: 120, justifyContent: 'center', alignItems: 'center' },
+  barContainer: { width: 44, height: '100%', alignItems: 'center', justifyContent: 'flex-end', marginRight: 12 },
+  barValueText: { fontSize: 11, fontWeight: '700', color: colors.primary.teal, marginBottom: 4 },
+  barTrack: {
+    width: 14,
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 9999,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  bar: { width: '100%', borderRadius: 9999 },
+  dayLabel: { fontSize: 10, fontWeight: '600', color: colors.text.secondary, marginTop: 8, textAlign: 'center' },
   chartSummary: { backgroundColor: '#DCFCE7', borderRadius: 12, padding: 12, alignItems: 'center' },
   chartSummaryValue: { fontSize: 24, fontWeight: '700', color: colors.primary.teal },
   chartSummaryLabel: { fontSize: 12, color: colors.text.secondary },
