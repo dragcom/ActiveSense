@@ -330,30 +330,45 @@ export const addWorkoutResult = async (
   return updated;
 };
 
-// Convert saved sessions into seven chart bars for the current week.
-export const getWeeklyActivity = async (): Promise<WeeklyActivity[]> => {
-  const sessions = await getWorkoutSessions();
-  const now = new Date();
+export const getWeeklyActivityFromSessions = (
+  sessions: WorkoutSession[],
+  now: Date = new Date(),
+): WeeklyActivity[] => {
   const day = now.getDay();
   const mondayOffset = day === 0 ? -6 : 1 - day;
   const monday = new Date(now);
   monday.setHours(0, 0, 0, 0);
   monday.setDate(now.getDate() + mondayOffset);
+  const pointsByDay = new Map<string, number>();
+
+  weekdays.forEach((_, index) => {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + index);
+    pointsByDay.set(getLocalDateKey(date), 0);
+  });
+
+  sessions.forEach((session) => {
+    const dateKey = getLocalDateKey(new Date(session.completedAt));
+    if (!pointsByDay.has(dateKey)) {
+      return;
+    }
+    pointsByDay.set(dateKey, (pointsByDay.get(dateKey) ?? 0) + session.pointsEarned);
+  });
 
   return weekdays.map((weekday, index) => {
-    const start = new Date(monday);
-    start.setDate(monday.getDate() + index);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 1);
-    const points = sessions
-      .filter((session) => {
-        const completedAt = new Date(session.completedAt);
-        return completedAt >= start && completedAt < end;
-      })
-      .reduce((sum, session) => sum + session.pointsEarned, 0);
-
-    return { id: weekday.toLowerCase(), day: weekday, points };
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + index);
+    return {
+      id: weekday.toLowerCase(),
+      day: weekday,
+      points: pointsByDay.get(getLocalDateKey(date)) ?? 0,
+    };
   });
+};
+
+// Convert saved sessions into seven chart bars for the current week.
+export const getWeeklyActivity = async (): Promise<WeeklyActivity[]> => {
+  return getWeeklyActivityFromSessions(await getWorkoutSessions());
 };
 
 // Reward redemption state is local for the prototype rewards shop.
