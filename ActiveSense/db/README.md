@@ -9,13 +9,13 @@ The SQL files in this folder are the source of truth for the production-ready pr
 The schema keeps the model intentionally small and relational:
 
 - `exercise_types`: allowed pose-tracked movements, including strength basics and HealthHub-style healthy ageing exercises.
-- `workout_categories`, `workouts`, `workout_exercises`: strength and healthy-ageing workout catalog.
+- `workout_categories`, `workouts`, `workout_exercises`: strength, healthy-ageing, and mobility workout catalog.
 - `pose_training_samples`: classifier examples linked to `exercise_types`.
 - `user_profiles`, `user_profile_medical_conditions`, `user_stats`, `workout_sessions`, `workout_session_exercise_results`: normalized user profile, health constraints, progress, and future per-exercise analytics.
 - `reward_vouchers`, `voucher_redemptions`, `achievements`: Healthpoints rewards and milestones.
 - `app_option_groups`, `app_options`, `app_settings`, `app_pages`: configurable app choices/settings without many tiny tables.
 
-The seed file inserts the current strength and healthy-ageing catalogs and deactivates older workout rows without deleting historical session records.
+The seed file inserts the current strength, healthy-ageing, and mobility catalogs and deactivates older workout rows without deleting historical session records.
 
 `user_stats.healthpoints` is the spendable reward balance. `user_stats.lifetime_healthpoints` is total earned forever and is used for lifetime achievements, so redeeming a voucher does not relock earned milestones. `voucher_redemptions.redemption_code` stores the barcode value shown on redeemed coupons, while `used_at` and `used_by` record whether a merchant/demo scanner has consumed it.
 

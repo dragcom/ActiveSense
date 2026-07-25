@@ -1,24 +1,32 @@
 -- Seed workout categories used for filters and catalog grouping.
-update public.workouts
-set is_active = false
-where id not in (1, 2);
+delete from public.workout_session_exercise_results
+where exercise_type in ('pushup', 'lunge', 'hip_extension', 'quad_stretch', 'triceps_stretch');
 
 delete from public.workout_exercises
-where workout_id in (1, 2);
+where workout_id in (1, 2, 3)
+  or pose_class in ('pushup', 'lunge', 'hip_extension', 'quad_stretch', 'triceps_stretch');
 
 delete from public.pose_training_samples;
 
+delete from public.exercise_types
+where slug in ('pushup', 'lunge', 'hip_extension', 'quad_stretch', 'triceps_stretch');
+
+delete from public.workouts
+where id not in (1, 2, 3);
+
+delete from public.workout_categories
+where id not in (1, 2, 3);
+
 insert into public.exercise_types (slug, label, description, sort_order) values
   ('squat', 'Squat', 'Lower-body strength movement tracked from hip, knee, and ankle landmarks.', 10),
-  ('pushup', 'Push-up', 'Upper-body strength movement tracked from shoulder, elbow, and wrist landmarks.', 20),
-  ('lunge', 'Lunge', 'Single-leg strength movement tracked from split stance, hip, knee, and ankle landmarks.', 30),
-  ('sit_to_stand', 'Sit to Stand', 'Low-impact chair strength movement tracked from hip and knee height changes.', 40),
-  ('hip_extension', 'Standing Hip Extension', 'Supported posterior leg raise tracked from hip, knee, and ankle movement.', 50),
-  ('side_leg_raise', 'Side Leg Raise', 'Supported lateral leg raise tracked from hip and ankle movement.', 60),
-  ('single_leg_stand', 'Single Leg Stand', 'Balance hold tracked from one lifted knee and a steady upright torso.', 70),
-  ('march', 'Stationary March', 'Warm-up movement tracked from alternating knee lifts and arm swing.', 80),
-  ('quad_stretch', 'Standing Quadriceps Stretch', 'Standing flexibility hold tracked from one bent knee and upright posture.', 90),
-  ('triceps_stretch', 'Triceps Stretch', 'Upper-body flexibility hold tracked from one raised elbow and wrist position.', 100)
+  ('sit_to_stand', 'Sit to Stand', 'Low-impact chair strength movement tracked from hip and knee height changes.', 20),
+  ('calf_raise', 'Calf Raise', 'Standing lower-leg strength movement tracked from heel and toe landmarks.', 30),
+  ('side_leg_raise', 'Side Leg Raise', 'Supported lateral leg raise tracked from hip and ankle movement.', 40),
+  ('march', 'Stationary March', 'Warm-up movement tracked from alternating knee lifts.', 50),
+  ('torso_twist', 'Torso Twist', 'Gentle trunk rotation tracked from shoulder and hip alignment.', 60),
+  ('side_bend', 'Side Bend', 'Lateral trunk mobility movement tracked from shoulder tilt.', 70),
+  ('overhead_reach', 'Overhead Reach', 'Shoulder mobility movement tracked from wrist height above shoulders.', 80),
+  ('single_leg_stand', 'Single Leg Stand', 'Balance hold tracked from one lifted foot and a steady upright torso.', 90)
 on conflict (slug) do update set
   label = excluded.label,
   description = excluded.description,
@@ -26,15 +34,17 @@ on conflict (slug) do update set
 
 insert into public.workout_categories (id, name, sort_order) values
   (1, 'Strength', 10),
-  (2, 'Healthy Ageing', 20)
+  (2, 'Healthy Ageing', 20),
+  (3, 'Mobility', 30)
 on conflict (id) do update set name = excluded.name, sort_order = excluded.sort_order;
 
 -- Seed the main workout catalog shown in Home and Workouts.
 insert into public.workouts
   (id, title, duration_minutes, difficulty, calories, category_id, emoji, gradient_start, gradient_end, description, recommended_min_age, recommended_max_age, is_active, intensity)
 values
-  (1, 'Strength Form Basics', 15, 'Beginner', 105, 1, 'activity', '#14B8A6', '#2563EB', 'Camera-tracked squats, push-ups, and lunges focused on visible, coachable strength form.', null, null, true, 'Low'),
-  (2, 'Healthy Ageing Balance & Strength', 20, 'Low Impact', 90, 2, 'heart', '#0F766E', '#84CC16', 'Gentle camera-tracked strength, balance, and mobility exercises for active ageing.', 50, null, true, 'Low')
+  (1, 'Strength Form Basics', 15, 'Beginner', 105, 1, 'activity', '#14B8A6', '#2563EB', 'Camera-tracked squats, sit-to-stands, and calf raises focused on visible lower-body form.', null, null, true, 'Low'),
+  (2, 'Healthy Ageing Balance & Strength', 22, 'Low Impact', 100, 2, 'heart', '#0F766E', '#84CC16', 'Gentle camera-tracked functional strength and balance exercises for active ageing.', 50, null, true, 'Low'),
+  (3, 'Mobility & Flexibility', 12, 'Beginner', 55, 3, 'repeat', '#06B6D4', '#8B5CF6', 'Low-impact upper-body and trunk mobility movements tracked with visible posture cues.', null, null, true, 'Low')
 on conflict (id) do update set
   title = excluded.title,
   duration_minutes = excluded.duration_minutes,
@@ -55,15 +65,16 @@ insert into public.workout_exercises
   (workout_id, name, sets, reps, points, sort_order, pose_class, feedback_prompt)
 values
   (1, 'Squats', 3, 10, 50, 10, 'squat', 'Keep knees aligned with toes and chest lifted.'),
-  (1, 'Push-ups', 3, 8, 50, 20, 'pushup', 'Keep shoulders, hips, and heels in one strong line.'),
-  (1, 'Lunges', 3, 8, 50, 30, 'lunge', 'Step into a split stance, keep your chest tall, then drive back up.'),
-  (2, 'Stationary March with Arm Swing', 2, 20, 30, 10, 'march', 'Stand tall and lift each knee gently while swinging your arms.'),
-  (2, 'Sit to Stand', 3, 10, 40, 20, 'sit_to_stand', 'Lean forward slightly, stand tall, then lower with control.'),
-  (2, 'Standing Hip Extension', 2, 10, 35, 30, 'hip_extension', 'Hold steady, keep your chest upright, and move one straight leg backward.'),
-  (2, 'Side Leg Raise', 2, 10, 35, 40, 'side_leg_raise', 'Keep your body tall and lift one straight leg to the side.'),
-  (2, 'Single Leg Stand', 2, 5, 35, 50, 'single_leg_stand', 'Stand tall and lift one knee while keeping your balance.'),
-  (2, 'Triceps Stretch', 2, 5, 25, 60, 'triceps_stretch', 'Raise one elbow overhead and keep your torso upright.'),
-  (2, 'Standing Quadriceps Stretch', 2, 5, 25, 70, 'quad_stretch', 'Stand tall, bend one knee, and keep both thighs close together.')
+  (1, 'Sit to Stand', 3, 10, 40, 20, 'sit_to_stand', 'Lean forward slightly, stand tall, then lower with control.'),
+  (1, 'Calf Raises', 3, 12, 35, 30, 'calf_raise', 'Rise onto your toes, pause briefly, then lower with control.'),
+  (2, 'Stationary March', 2, 20, 30, 10, 'march', 'Stand tall and lift each knee gently.'),
+  (2, 'Side Leg Raise', 2, 10, 35, 20, 'side_leg_raise', 'Keep your body tall and lift one straight leg to the side.'),
+  (2, 'Single Leg Stand', 2, 5, 35, 30, 'single_leg_stand', 'Stand tall and lift one foot while keeping your balance.'),
+  (2, 'Sit to Stand', 2, 10, 35, 40, 'sit_to_stand', 'Use a steady chair, stand tall, then sit back down slowly.'),
+  (2, 'Calf Raises', 2, 12, 30, 50, 'calf_raise', 'Rise onto your toes while keeping posture upright.'),
+  (3, 'Overhead Reach', 2, 10, 25, 10, 'overhead_reach', 'Reach one or both arms overhead, then lower smoothly.'),
+  (3, 'Side Bend', 2, 10, 25, 20, 'side_bend', 'Bend gently to one side, return upright, then switch sides.'),
+  (3, 'Torso Twist', 2, 10, 25, 30, 'torso_twist', 'Rotate your shoulders gently while keeping hips steady.')
 on conflict (workout_id, sort_order) do update set
   name = excluded.name,
   sets = excluded.sets,
@@ -77,17 +88,19 @@ on conflict (workout_id, sort_order) do update set
 insert into public.pose_training_samples (id, label, features) values
   (1, 'squat', array[166,165,82,84,72,74,65,1.12,0.30,0.55]::double precision[]),
   (2, 'squat', array[158,160,96,93,83,82,68,1.20,0.28,0.48]::double precision[]),
-  (3, 'pushup', array[105,108,162,160,174,172,20,0.38,0.62,0.26]::double precision[]),
-  (4, 'pushup', array[82,86,166,164,172,173,16,0.34,0.70,0.25]::double precision[]),
-  (5, 'lunge', array[164,162,92,128,102,118,78,1.65,1.02,2.20]::double precision[]),
-  (6, 'lunge', array[166,164,118,88,116,98,82,1.58,1.04,2.05]::double precision[]),
-  (7, 'sit_to_stand', array[168,168,96,98,78,80,72,1.12,0.72,0.50]::double precision[]),
-  (8, 'hip_extension', array[168,168,164,170,144,166,86,1.40,0.50,2.25]::double precision[]),
-  (9, 'side_leg_raise', array[168,168,170,156,170,142,88,1.38,0.48,2.45]::double precision[]),
-  (10, 'single_leg_stand', array[166,166,92,168,90,168,88,1.25,0.50,1.30]::double precision[]),
+  (3, 'sit_to_stand', array[168,168,96,98,78,80,72,1.12,0.72,0.50]::double precision[]),
+  (4, 'sit_to_stand', array[166,166,128,126,112,114,76,1.16,0.62,0.52]::double precision[]),
+  (5, 'calf_raise', array[168,168,168,168,166,166,88,1.25,0.52,0.55]::double precision[]),
+  (6, 'calf_raise', array[166,166,170,170,168,168,88,1.28,0.50,0.50]::double precision[]),
+  (7, 'side_leg_raise', array[168,168,170,156,170,142,88,1.38,0.48,2.45]::double precision[]),
+  (8, 'side_leg_raise', array[168,168,156,170,142,170,88,1.36,0.48,2.35]::double precision[]),
+  (9, 'single_leg_stand', array[166,166,92,168,90,168,88,1.25,0.50,1.30]::double precision[]),
+  (10, 'single_leg_stand', array[166,166,168,92,168,90,88,1.25,0.50,1.30]::double precision[]),
   (11, 'march', array[150,150,88,166,92,164,86,1.20,0.85,1.45]::double precision[]),
-  (12, 'quad_stretch', array[164,164,52,168,88,168,86,1.20,0.50,1.20]::double precision[]),
-  (13, 'triceps_stretch', array[58,164,168,168,168,168,88,1.40,1.25,2.30]::double precision[])
+  (12, 'march', array[150,150,166,88,164,92,86,1.20,0.85,1.45]::double precision[]),
+  (13, 'overhead_reach', array[168,168,168,168,168,168,88,1.32,1.75,0.55]::double precision[]),
+  (14, 'side_bend', array[168,168,168,168,168,168,76,1.30,0.70,0.55]::double precision[]),
+  (15, 'torso_twist', array[168,168,168,168,168,168,88,1.55,0.65,0.55]::double precision[])
 on conflict (id) do update set label = excluded.label, features = excluded.features;
 
 -- Seed rewards that users can redeem with Healthpoints.

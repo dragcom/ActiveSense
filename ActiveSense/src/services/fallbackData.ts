@@ -9,7 +9,7 @@ import {
 } from '../types';
 
 // These rows mirror db/seed.sql so local builds can run before Supabase is configured.
-export const fallbackWorkoutCategories = ['All', 'Strength', 'Healthy Ageing'];
+export const fallbackWorkoutCategories = ['All', 'Strength', 'Healthy Ageing', 'Mobility'];
 
 // The catalog fallback keeps every workout screen navigable during local simulator testing.
 export const fallbackWorkouts: Workout[] = [
@@ -22,19 +22,31 @@ export const fallbackWorkouts: Workout[] = [
     category: 'Strength',
     emoji: 'activity',
     gradient: ['#14B8A6', '#2563EB'],
-    description: 'Camera-tracked squats, push-ups, and lunges focused on visible, coachable strength form.',
+    description: 'Camera-tracked squats, sit-to-stands, and calf raises focused on visible lower-body form.',
     intensity: 'Low',
   },
   {
     id: 2,
     title: 'Healthy Ageing Balance & Strength',
-    duration: '20 min',
+    duration: '22 min',
     difficulty: 'Low Impact',
-    calories: '90 cal',
+    calories: '100 cal',
     category: 'Healthy Ageing',
     emoji: 'heart',
     gradient: ['#0F766E', '#84CC16'],
-    description: 'Gentle camera-tracked strength, balance, and mobility exercises for active ageing.',
+    description: 'Gentle camera-tracked functional strength and balance exercises for active ageing.',
+    intensity: 'Low',
+  },
+  {
+    id: 3,
+    title: 'Mobility & Flexibility',
+    duration: '12 min',
+    difficulty: 'Beginner',
+    calories: '55 cal',
+    category: 'Mobility',
+    emoji: 'repeat',
+    gradient: ['#06B6D4', '#8B5CF6'],
+    description: 'Low-impact upper-body and trunk mobility movements tracked with visible posture cues.',
     intensity: 'Low',
   },
 ];
@@ -42,32 +54,35 @@ export const fallbackWorkouts: Workout[] = [
 // Workout exercises are grouped by workout id for the quick-start and detail flows.
 export const fallbackWorkoutExercises: WorkoutExercise[] = [
   { id: 1, workoutId: 1, name: 'Squats', sets: 3, reps: 10, points: 50, sortOrder: 10, targetLandmarks: 33, poseClass: 'squat', feedbackPrompt: 'Keep knees aligned with toes and chest lifted.' },
-  { id: 2, workoutId: 1, name: 'Push-ups', sets: 3, reps: 8, points: 50, sortOrder: 20, targetLandmarks: 33, poseClass: 'pushup', feedbackPrompt: 'Keep shoulders, hips, and heels in one strong line.' },
-  { id: 3, workoutId: 1, name: 'Lunges', sets: 3, reps: 8, points: 50, sortOrder: 30, targetLandmarks: 33, poseClass: 'lunge', feedbackPrompt: 'Step into a split stance, keep your chest tall, then drive back up.' },
-  { id: 4, workoutId: 2, name: 'Stationary March with Arm Swing', sets: 2, reps: 20, points: 30, sortOrder: 10, targetLandmarks: 33, poseClass: 'march', feedbackPrompt: 'Stand tall and lift each knee gently while swinging your arms.' },
-  { id: 5, workoutId: 2, name: 'Sit to Stand', sets: 3, reps: 10, points: 40, sortOrder: 20, targetLandmarks: 33, poseClass: 'sit_to_stand', feedbackPrompt: 'Lean forward slightly, stand tall, then lower with control.' },
-  { id: 6, workoutId: 2, name: 'Standing Hip Extension', sets: 2, reps: 10, points: 35, sortOrder: 30, targetLandmarks: 33, poseClass: 'hip_extension', feedbackPrompt: 'Hold steady, keep your chest upright, and move one straight leg backward.' },
-  { id: 7, workoutId: 2, name: 'Side Leg Raise', sets: 2, reps: 10, points: 35, sortOrder: 40, targetLandmarks: 33, poseClass: 'side_leg_raise', feedbackPrompt: 'Keep your body tall and lift one straight leg to the side.' },
-  { id: 8, workoutId: 2, name: 'Single Leg Stand', sets: 2, reps: 5, points: 35, sortOrder: 50, targetLandmarks: 33, poseClass: 'single_leg_stand', feedbackPrompt: 'Stand tall and lift one knee while keeping your balance.' },
-  { id: 9, workoutId: 2, name: 'Triceps Stretch', sets: 2, reps: 5, points: 25, sortOrder: 60, targetLandmarks: 33, poseClass: 'triceps_stretch', feedbackPrompt: 'Raise one elbow overhead and keep your torso upright.' },
-  { id: 10, workoutId: 2, name: 'Standing Quadriceps Stretch', sets: 2, reps: 5, points: 25, sortOrder: 70, targetLandmarks: 33, poseClass: 'quad_stretch', feedbackPrompt: 'Stand tall, bend one knee, and keep both thighs close together.' },
+  { id: 2, workoutId: 1, name: 'Sit to Stand', sets: 3, reps: 10, points: 40, sortOrder: 20, targetLandmarks: 33, poseClass: 'sit_to_stand', feedbackPrompt: 'Lean forward slightly, stand tall, then lower with control.' },
+  { id: 3, workoutId: 1, name: 'Calf Raises', sets: 3, reps: 12, points: 35, sortOrder: 30, targetLandmarks: 33, poseClass: 'calf_raise', feedbackPrompt: 'Rise onto your toes, pause briefly, then lower with control.' },
+  { id: 4, workoutId: 2, name: 'Stationary March', sets: 2, reps: 20, points: 30, sortOrder: 10, targetLandmarks: 33, poseClass: 'march', feedbackPrompt: 'Stand tall and lift each knee gently.' },
+  { id: 5, workoutId: 2, name: 'Side Leg Raise', sets: 2, reps: 10, points: 35, sortOrder: 20, targetLandmarks: 33, poseClass: 'side_leg_raise', feedbackPrompt: 'Keep your body tall and lift one straight leg to the side.' },
+  { id: 6, workoutId: 2, name: 'Single Leg Stand', sets: 2, reps: 5, points: 35, sortOrder: 30, targetLandmarks: 33, poseClass: 'single_leg_stand', feedbackPrompt: 'Stand tall and lift one foot while keeping your balance.' },
+  { id: 7, workoutId: 2, name: 'Sit to Stand', sets: 2, reps: 10, points: 35, sortOrder: 40, targetLandmarks: 33, poseClass: 'sit_to_stand', feedbackPrompt: 'Use a steady chair, stand tall, then sit back down slowly.' },
+  { id: 8, workoutId: 2, name: 'Calf Raises', sets: 2, reps: 12, points: 30, sortOrder: 50, targetLandmarks: 33, poseClass: 'calf_raise', feedbackPrompt: 'Rise onto your toes while keeping posture upright.' },
+  { id: 9, workoutId: 3, name: 'Overhead Reach', sets: 2, reps: 10, points: 25, sortOrder: 10, targetLandmarks: 33, poseClass: 'overhead_reach', feedbackPrompt: 'Reach one or both arms overhead, then lower smoothly.' },
+  { id: 10, workoutId: 3, name: 'Side Bend', sets: 2, reps: 10, points: 25, sortOrder: 20, targetLandmarks: 33, poseClass: 'side_bend', feedbackPrompt: 'Bend gently to one side, return upright, then switch sides.' },
+  { id: 11, workoutId: 3, name: 'Torso Twist', sets: 2, reps: 10, points: 25, sortOrder: 30, targetLandmarks: 33, poseClass: 'torso_twist', feedbackPrompt: 'Rotate your shoulders gently while keeping hips steady.' },
 ];
 
 // Classifier fallback samples are the same ten-feature vectors expected by poseClassifier.
 export const fallbackPoseTrainingSamples: PoseTrainingSample[] = [
   { id: 1, label: 'squat', features: [166, 165, 82, 84, 72, 74, 65, 1.12, 0.3, 0.55] },
   { id: 2, label: 'squat', features: [158, 160, 96, 93, 83, 82, 68, 1.2, 0.28, 0.48] },
-  { id: 3, label: 'pushup', features: [105, 108, 162, 160, 174, 172, 20, 0.38, 0.62, 0.26] },
-  { id: 4, label: 'pushup', features: [82, 86, 166, 164, 172, 173, 16, 0.34, 0.7, 0.25] },
-  { id: 5, label: 'lunge', features: [164, 162, 92, 128, 102, 118, 78, 1.65, 1.02, 2.2] },
-  { id: 6, label: 'lunge', features: [166, 164, 118, 88, 116, 98, 82, 1.58, 1.04, 2.05] },
-  { id: 7, label: 'sit_to_stand', features: [168, 168, 96, 98, 78, 80, 72, 1.12, 0.72, 0.5] },
-  { id: 8, label: 'hip_extension', features: [168, 168, 164, 170, 144, 166, 86, 1.4, 0.5, 2.25] },
-  { id: 9, label: 'side_leg_raise', features: [168, 168, 170, 156, 170, 142, 88, 1.38, 0.48, 2.45] },
-  { id: 10, label: 'single_leg_stand', features: [166, 166, 92, 168, 90, 168, 88, 1.25, 0.5, 1.3] },
+  { id: 3, label: 'sit_to_stand', features: [168, 168, 96, 98, 78, 80, 72, 1.12, 0.72, 0.5] },
+  { id: 4, label: 'sit_to_stand', features: [166, 166, 128, 126, 112, 114, 76, 1.16, 0.62, 0.52] },
+  { id: 5, label: 'calf_raise', features: [168, 168, 168, 168, 166, 166, 88, 1.25, 0.52, 0.55] },
+  { id: 6, label: 'calf_raise', features: [166, 166, 170, 170, 168, 168, 88, 1.28, 0.5, 0.5] },
+  { id: 7, label: 'side_leg_raise', features: [168, 168, 170, 156, 170, 142, 88, 1.38, 0.48, 2.45] },
+  { id: 8, label: 'side_leg_raise', features: [168, 168, 156, 170, 142, 170, 88, 1.36, 0.48, 2.35] },
+  { id: 9, label: 'single_leg_stand', features: [166, 166, 92, 168, 90, 168, 88, 1.25, 0.5, 1.3] },
+  { id: 10, label: 'single_leg_stand', features: [166, 166, 168, 92, 168, 90, 88, 1.25, 0.5, 1.3] },
   { id: 11, label: 'march', features: [150, 150, 88, 166, 92, 164, 86, 1.2, 0.85, 1.45] },
-  { id: 12, label: 'quad_stretch', features: [164, 164, 52, 168, 88, 168, 86, 1.2, 0.5, 1.2] },
-  { id: 13, label: 'triceps_stretch', features: [58, 164, 168, 168, 168, 168, 88, 1.4, 1.25, 2.3] },
+  { id: 12, label: 'march', features: [150, 150, 166, 88, 164, 92, 86, 1.2, 0.85, 1.45] },
+  { id: 13, label: 'overhead_reach', features: [168, 168, 168, 168, 168, 168, 88, 1.32, 1.75, 0.55] },
+  { id: 14, label: 'side_bend', features: [168, 168, 168, 168, 168, 168, 76, 1.3, 0.7, 0.55] },
+  { id: 15, label: 'torso_twist', features: [168, 168, 168, 168, 168, 168, 88, 1.55, 0.65, 0.55] },
 ];
 
 export const fallbackRewardVouchers: RewardVoucher[] = [

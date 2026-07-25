@@ -102,19 +102,21 @@ const main = async () => {
     .eq('is_active', true);
   assertNoError('read active workouts', workoutError);
   const activeWorkoutIds = new Set((activeWorkouts ?? []).map((workout) => workout.id));
-  assert('Strength and Healthy Ageing workouts should be active', activeWorkoutIds.has(1) && activeWorkoutIds.has(2));
+  assert(
+    'Strength, Healthy Ageing, and Mobility workouts should be active',
+    activeWorkoutIds.has(1) && activeWorkoutIds.has(2) && activeWorkoutIds.has(3),
+  );
 
   const expectedPoseClasses = [
     'squat',
-    'pushup',
-    'lunge',
     'sit_to_stand',
-    'hip_extension',
+    'calf_raise',
     'side_leg_raise',
-    'single_leg_stand',
     'march',
-    'quad_stretch',
-    'triceps_stretch',
+    'torso_twist',
+    'side_bend',
+    'overhead_reach',
+    'single_leg_stand',
   ];
   const { data: exerciseTypes, error: exerciseTypeError } = await anon
     .from('exercise_types')
@@ -129,7 +131,7 @@ const main = async () => {
   const { data: workoutExercises, error: workoutExerciseError } = await anon
     .from('workout_exercises')
     .select('pose_class')
-    .in('workout_id', [1, 2]);
+    .in('workout_id', [1, 2, 3]);
   assertNoError('read strength workout exercises', workoutExerciseError);
   const workoutPoseClasses = new Set((workoutExercises ?? []).map((row) => row.pose_class));
   expectedPoseClasses.forEach((slug) => {
