@@ -70,7 +70,7 @@ export default function PoseCameraPreview({ enabled, onLandmarks, style }: PoseC
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
       <style>
         body, html { margin: 0; padding: 0; overflow: hidden; height: 100%; background-color: #111827; position: relative; }
-        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        video { width: 100%; height: 100%; object-fit: contain; transform: scaleX(-1); }
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 999; display: block; }
         #status { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); color: #fff; padding: 4px 8px; font-family: sans-serif; font-size: 10px; border-radius: 4px; z-index: 1000; }
       </style>
@@ -184,13 +184,34 @@ export default function PoseCameraPreview({ enabled, onLandmarks, style }: PoseC
 
             setStatus("Starting camera...");
             const video = document.getElementById('webcam');
+
+            // 1. Request HD resolution to force full sensor readout
             const stream = await navigator.mediaDevices.getUserMedia({ 
               video: { 
                 facingMode: "user",
-                width: { ideal: 640 },
-                height: { ideal: 480 }
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                aspectRatio: { ideal: 1.7777777778 } // 16:9 aspect ratio
               } 
             });
+
+            // 2. Query track capabilities and set minimum zoom hardware level
+            const videoTrack = stream.getVideoTracks()[0];
+            if (videoTrack) {
+              try {
+                const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+                
+                // If device support zoom constraint natively, set to minimum (unzoomed/wide)
+                if (capabilities.zoom) {
+                  await videoTrack.applyConstraints({
+                    advanced: [{ zoom: capabilities.zoom.min || 1.0 }]
+                  });
+                }
+              } catch (zoomErr) {
+                window.logToNative("Hardware zoom constraint not supported, using default wide sensor.");
+              }
+            }
+
             video.srcObject = stream;
             
             video.onloadedmetadata = () => {
@@ -275,7 +296,7 @@ export default function PoseCameraPreview({ enabled, onLandmarks, style }: PoseC
       <WebView
         ref={webViewRef}
         originWhitelist={['*']}
-        source={{ html: htmlContent, baseUrl: 'https://localhost' }}  
+        source={{ html: htmlContent, baseUrl: 'https://localhost' }}  constraints
         onMessage={handleMessage}
         allowsInlineMediaPlayback={true}
         mediaPlaybackRequiresUserAction={false}

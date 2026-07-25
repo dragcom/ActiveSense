@@ -1,21 +1,21 @@
-import { Suspense, useRef, useEffect } from "react";
-import { useFrame } from "@react-three/fiber"; 
-import * as THREE from 'three'; 
+import { Suspense, useRef, useEffect, useCallback } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import * as THREE from "three";
 import { useGLTF, useAnimations } from "@react-three/drei";
 import { useConfiguratorStore, pb } from "../store";
 import { Asset } from "./Asset";
-import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter";
-import { prune, dedup, draco, quantize } from "@gltf-transform/functions";
-import { NodeIO } from "@gltf-transform/core";
+import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 
-const LIVE_AVATAR_BASE_Y = -0.15;
+// Keep avatar root anchored at ground level (Y = 0)
+const LIVE_AVATAR_BASE_Y = 0;
+const POSE_TIMEOUT_MS = 300; // Time before stale tracking data drops to rest pose
 
 const MP = {
   NOSE: 0,
-  L_EYE_INNER: 1,    L_EYE: 2,           L_EYE_OUTER: 3,
-  R_EYE_INNER: 4,    R_EYE: 5,           R_EYE_OUTER: 6,
-  L_EAR: 7,          R_EAR: 8,
-  MOUTH_LEFT: 9,     MOUTH_RIGHT: 10,
+  L_EYE_INNER: 1,  L_EYE: 2,        L_EYE_OUTER: 3,
+  R_EYE_INNER: 4,  R_EYE: 5,        R_EYE_OUTER: 6,
+  L_EAR: 7,        R_EAR: 8,
+  MOUTH_LEFT: 9,      MOUTH_RIGHT: 10,
   L_SHOULDER: 11,    R_SHOULDER: 12,
   L_ELBOW: 13,        R_ELBOW: 14,
   L_WRIST: 15,        R_WRIST: 16,
@@ -25,8 +25,19 @@ const MP = {
   L_KNEE: 25,         R_KNEE: 26,
   L_ANKLE: 27,        R_ANKLE: 28,
   L_HEEL: 29,         L_FOOT_INDEX: 30,
-  R_HEEL: 31,         R_FOOT_INDEX: 32
+  R_HEEL: 31,         R_FOOT_INDEX: 32,
 };
+
+// Reusable math objects
+const _v1 = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+const _vDir = new THREE.Vector3();
+const _q1 = new THREE.Quaternion();
+const _q2 = new THREE.Quaternion();
+const _parentWorldQuat = new THREE.Quaternion();
+const BEND_AXIS_X = new THREE.Vector3(1, 0, 0);
+const BEND_AXIS_Y = new THREE.Vector3(0, 1, 0);
+const BEND_AXIS_Z = new THREE.Vector3(0, 0, 1);
 
 const getRestDirection = (bone) => {
   const child = bone.children.find((c) => c.isBone);
@@ -44,30 +55,50 @@ const getScreenX = (joint) => {
   return typeof x === "number" && x >= 0 && x <= 1 ? x : null;
 };
 
+const calculate3DAngle = (pA, pB, pC) => {
+  if (!pA || !pB || !pC) return null;
+  // Scale Z depth down by 0.4 to match 2D normalized screen proportions
+  _v1.set(pA.x - pB.x, -(pA.y - pB.y), -(pA.z - pB.z) * 0.4);
+  _v2.set(pC.x - pB.x, -(pC.y - pB.y), -(pC.z - pB.z) * 0.4);
+  const dot = _v1.dot(_v2);
+  const mag1 = _v1.length();
+  const mag2 = _v2.length();
+  if (mag1 * mag2 === 0) return null;
+  const cosAngle = THREE.MathUtils.clamp(dot / (mag1 * mag2), -1, 1);
+  return THREE.MathUtils.radToDeg(Math.acos(cosAngle));
+};
+
 export const Avatar = ({ ...props }) => {
   const group = useRef();
-  
+  const { camera } = useThree();
+
   const { scene, nodes } = useGLTF("/models/Armature.glb");
   const { animations } = useGLTF("/models/Poses.glb");
   const { actions, mixer } = useAnimations(animations, group);
-  
+
   const customization = useConfiguratorStore((state) => state.customization);
   const skin = useConfiguratorStore((state) => state.skin);
   const pose = useConfiguratorStore((state) => state.pose);
   const setDownload = useConfiguratorStore((state) => state.setDownload);
-  
+
   const latestJoints = useRef(null);
+  const lastPoseTimestamp = useRef(0);
   const smoothedJoints = useRef(null);
   const calibrationRef = useRef(null);
   const trackingOriginRef = useRef(null);
   const squatAmountRef = useRef(0);
+  const isSeatedRef = useRef(false);
   const frameCounter = useRef(0);
   const torsoVisibleRef = useRef(false);
-  
+
+  const kneeAngleLeftRef = useRef(180);
+  const kneeAngleRightRef = useRef(180);
+
   const baseGroupPosition = useRef(new THREE.Vector3());
   const baseGroupRotation = useRef(new THREE.Euler());
-  const liveGroupPosition = useRef(new THREE.Vector3(0, LIVE_AVATAR_BASE_Y, 0.02));
-  const liveGroupRotation = useRef(new THREE.Euler(-0.02, 0, 0));
+
+  const liveGroupPosition = useRef(new THREE.Vector3(0, LIVE_AVATAR_BASE_Y, 0));
+  const liveGroupRotation = useRef(new THREE.Euler(0, 0, 0));
   const turnTargetRef = useRef(0);
 
   const bonesRef = useRef({
@@ -77,17 +108,57 @@ export const Avatar = ({ ...props }) => {
     leftHand: null, rightHand: null,
     spine: null, hips: null,
     leftUpLeg: null, leftLeg: null, rightUpLeg: null, rightLeg: null,
-    leftFoot: null, rightFoot: null
+    leftFoot: null, rightFoot: null,
   });
+
+  const smoothPose = useCallback((incoming, alpha = 0.35) => {
+    if (!incoming) return null;
+    if (!smoothedJoints.current || smoothedJoints.current.length !== incoming.length) {
+      smoothedJoints.current = incoming.map((j) => ({
+        ...j,
+        screenX: getScreenX(j) ?? undefined,
+        screenY: getScreenY(j) ?? undefined,
+      }));
+      return smoothedJoints.current;
+    }
+
+    for (let i = 0; i < incoming.length; i++) {
+      const joint = incoming[i];
+      const prev = smoothedJoints.current[i];
+      const prevScreenX = getScreenX(prev);
+      const currScreenX = getScreenX(joint);
+      const prevScreenY = getScreenY(prev);
+      const currScreenY = getScreenY(joint);
+
+      prev.x = THREE.MathUtils.lerp(prev.x, joint.x, alpha);
+      prev.y = THREE.MathUtils.lerp(prev.y, joint.y, alpha);
+      prev.z = THREE.MathUtils.lerp(prev.z, joint.z, alpha);
+      prev.screenX = currScreenX !== null && prevScreenX !== null
+        ? THREE.MathUtils.lerp(prevScreenX, currScreenX, alpha)
+        : currScreenX ?? undefined;
+      prev.screenY = currScreenY !== null && prevScreenY !== null
+        ? THREE.MathUtils.lerp(prevScreenY, currScreenY, alpha)
+        : currScreenY ?? undefined;
+      prev.visibility = joint.visibility ?? prev.visibility ?? 1;
+    }
+
+    return smoothedJoints.current;
+  }, []);
+
+  const isVisible = (id) => {
+    const joint = latestJoints.current?.[id];
+    if (!joint) return false;
+    return joint.visibility === undefined || joint.visibility > 0.35;
+  };
+
+  const getJoint = (id) => latestJoints.current?.[id];
 
   const hasStableTorso = () => {
     const ids = [MP.L_SHOULDER, MP.R_SHOULDER, MP.L_HIP, MP.R_HIP];
-
     return ids.every((id) => {
       const joint = latestJoints.current?.[id];
       const screenX = getScreenX(joint);
       const screenY = getScreenY(joint);
-
       return (
         joint &&
         (joint.visibility === undefined || joint.visibility > 0.45) &&
@@ -97,45 +168,25 @@ export const Avatar = ({ ...props }) => {
     });
   };
 
-  const smoothPose = (incoming, alpha = 0.35) => {
-    if (!incoming) return null;
-    if (!smoothedJoints.current) {
-      smoothedJoints.current = incoming.map((j) => ({
-        ...j,
-        screenX: getScreenX(j) ?? undefined,
-        screenY: getScreenY(j) ?? undefined,
-      }));
-      return smoothedJoints.current;
-    }
-
-    smoothedJoints.current = incoming.map((joint, i) => {
-      const prev = smoothedJoints.current[i] || joint;
-      
-      const prevScreenX = getScreenX(prev);
-      const currScreenX = getScreenX(joint);
-      const prevScreenY = getScreenY(prev);
-      const currScreenY = getScreenY(joint);
-
-      return {
-        x: THREE.MathUtils.lerp(prev.x, joint.x, alpha),
-        y: THREE.MathUtils.lerp(prev.y, joint.y, alpha),
-        z: THREE.MathUtils.lerp(prev.z, joint.z, alpha),
-        screenX: currScreenX !== null && prevScreenX !== null 
-          ? THREE.MathUtils.lerp(prevScreenX, currScreenX, alpha) 
-          : currScreenX ?? undefined,
-        screenY: currScreenY !== null && prevScreenY !== null 
-          ? THREE.MathUtils.lerp(prevScreenY, currScreenY, alpha) 
-          : currScreenY ?? undefined,
-        visibility: joint.visibility ?? prev.visibility ?? 1,
-      };
-    });
-
-    return smoothedJoints.current;
-  };
-
   useEffect(() => {
-    window.receiveRNPose = (joints) => {
+    const handlePose = (joints) => {
       latestJoints.current = smoothPose(joints);
+      lastPoseTimestamp.current = performance.now();
+    };
+
+    window.receiveRNPose = handlePose;
+
+    window.receiveRNMessage = (data) => {
+      const parsed = typeof data === "string" ? JSON.parse(data) : data;
+      if (parsed?.type === "LIVE_POSE") {
+        handlePose(parsed.joints);
+      } else if (parsed?.type === "SET_SEATED_MODE") {
+        isSeatedRef.current = Boolean(parsed.enabled);
+      }
+    };
+
+    window.setSeatedMode = (enabled) => {
+      isSeatedRef.current = Boolean(enabled);
     };
 
     window.resetAvatarCalibration = () => {
@@ -144,19 +195,24 @@ export const Avatar = ({ ...props }) => {
       trackingOriginRef.current = null;
     };
 
-    const isLiveMode =
-      new URLSearchParams(window.location.search).get('mode') === 'live' ||
-      !!latestJoints.current;
-
-    if (isLiveMode && mixer) {
-      mixer.stopAllAction();
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: "WEBVIEW_READY" }));
     }
 
     return () => {
       delete window.receiveRNPose;
+      delete window.receiveRNMessage;
+      delete window.setSeatedMode;
       delete window.resetAvatarCalibration;
     };
-  }, [mixer]);
+  }, [smoothPose]);
+
+  useEffect(() => {
+    if (group.current) {
+      baseGroupPosition.current.copy(group.current.position);
+      baseGroupRotation.current.copy(group.current.rotation);
+    }
+  }, []);
 
   useEffect(() => {
     if (scene && nodes) {
@@ -171,11 +227,14 @@ export const Avatar = ({ ...props }) => {
           found = scene.getObjectByName(fallback);
           if (found) return found;
         }
-        
+
         let partialMatch = null;
         scene.traverse((child) => {
-          if (child.isBone && (child.name.toLowerCase().includes(standardName.toLowerCase().replace("mixamorig", "")) 
-              || fallbacks.some(f => child.name.toLowerCase().includes(f.toLowerCase())))) {
+          if (
+            child.isBone &&
+            (child.name.toLowerCase().includes(standardName.toLowerCase().replace("mixamorig", "")) ||
+              fallbacks.some((f) => child.name.toLowerCase().includes(f.toLowerCase())))
+          ) {
             partialMatch = child;
           }
         });
@@ -193,44 +252,26 @@ export const Avatar = ({ ...props }) => {
         return bone;
       };
 
-      bonesRef.current.leftShoulder = storeBone("leftShoulder", getBone("mixamorigLeftShoulder", ["LeftShoulder", "leftShoulder", "Clavicle_L"]));
-      bonesRef.current.rightShoulder = storeBone("rightShoulder", getBone("mixamorigRightShoulder", ["RightShoulder", "rightShoulder", "Clavicle_R"]));
-      bonesRef.current.leftArm = storeBone("leftArm", getBone("mixamorigLeftArm", ["LeftArm", "leftArm", "Arm_L"]));
-      bonesRef.current.leftForeArm = storeBone("leftForeArm", getBone("mixamorigLeftForeArm", ["LeftForeArm", "leftForeArm", "ForeArm_L"]));
-      bonesRef.current.rightArm = storeBone("rightArm", getBone("mixamorigRightArm", ["RightArm", "rightArm", "Arm_R"]));
-      bonesRef.current.rightForeArm = storeBone("rightForeArm", getBone("mixamorigRightForeArm", ["RightForeArm", "rightForeArm", "ForeArm_R"]));
-      bonesRef.current.spine = storeBone("spine", getBone("mixamorigSpine", ["Spine", "spine", "Spine1", "Spine2", "mixamorigSpine1"]));
-      bonesRef.current.hips = storeBone("hips", getBone("mixamorigHips", ["Hips", "hips", "Pelvis"]));
-      bonesRef.current.leftUpLeg = storeBone("leftUpLeg", getBone("mixamorigLeftUpLeg", ["LeftUpLeg", "leftUpLeg", "Thigh_L"]));
-      bonesRef.current.leftLeg = storeBone("leftLeg", getBone("mixamorigLeftLeg", ["LeftLeg", "leftLeg", "Shin_L"]));
-      bonesRef.current.rightUpLeg = storeBone("rightUpLeg", getBone("mixamorigRightUpLeg", ["RightUpLeg", "rightUpLeg", "Thigh_R"]));
-      bonesRef.current.rightLeg = storeBone("rightLeg", getBone("mixamorigRightLeg", ["RightLeg", "rightLeg", "Shin_R"]));
-      bonesRef.current.neck = storeBone("neck", getBone("mixamorigNeck", ["Neck", "neck", "Neck1", "mixamorigSpine2"]));
-      bonesRef.current.head = storeBone("head", getBone("mixamorigHead", ["Head", "head", "mixamorigHeadTop_End"]));
-      bonesRef.current.leftHand = storeBone("leftHand", getBone("mixamorigLeftHand", ["LeftHand", "leftHand", "Hand_L"]));
-      bonesRef.current.rightHand = storeBone("rightHand", getBone("mixamorigRightHand", ["RightHand", "rightHand", "Hand_R"]));
-      bonesRef.current.leftFoot = storeBone("leftFoot", getBone("mixamorigLeftFoot", ["LeftFoot", "leftFoot", "Foot_L", "LeftToeBase"]));
-      bonesRef.current.rightFoot = storeBone("rightFoot", getBone("mixamorigRightFoot", ["RightFoot", "rightFoot", "Foot_R", "RightToeBase"]));
+      storeBone("leftShoulder", getBone("mixamorigLeftShoulder", ["LeftShoulder", "leftShoulder", "Clavicle_L"]));
+      storeBone("rightShoulder", getBone("mixamorigRightShoulder", ["RightShoulder", "rightShoulder", "Clavicle_R"]));
+      storeBone("leftArm", getBone("mixamorigLeftArm", ["LeftArm", "leftArm", "Arm_L"]));
+      storeBone("leftForeArm", getBone("mixamorigLeftForeArm", ["LeftForeArm", "leftForeArm", "ForeArm_L"]));
+      storeBone("rightArm", getBone("mixamorigRightArm", ["RightArm", "rightArm", "Arm_R"]));
+      storeBone("rightForeArm", getBone("mixamorigRightForeArm", ["RightForeArm", "rightForeArm", "ForeArm_R"]));
+      storeBone("spine", getBone("mixamorigSpine", ["Spine", "spine", "Spine1", "Spine2", "mixamorigSpine1"]));
+      storeBone("hips", getBone("mixamorigHips", ["Hips", "hips", "Pelvis"]));
+      storeBone("leftUpLeg", getBone("mixamorigLeftUpLeg", ["LeftUpLeg", "leftUpLeg", "Thigh_L"]));
+      storeBone("leftLeg", getBone("mixamorigLeftLeg", ["LeftLeg", "leftLeg", "Shin_L"]));
+      storeBone("rightUpLeg", getBone("mixamorigRightUpLeg", ["RightUpLeg", "rightUpLeg", "Thigh_R"]));
+      storeBone("rightLeg", getBone("mixamorigRightLeg", ["RightLeg", "rightLeg", "Shin_R"]));
+      storeBone("neck", getBone("mixamorigNeck", ["Neck", "neck", "Neck1", "mixamorigSpine2"]));
+      storeBone("head", getBone("mixamorigHead", ["Head", "head", "mixamorigHeadTop_End"]));
+      storeBone("leftHand", getBone("mixamorigLeftHand", ["LeftHand", "leftHand", "Hand_L"]));
+      storeBone("rightHand", getBone("mixamorigRightHand", ["RightHand", "rightHand", "Hand_R"]));
+      storeBone("leftFoot", getBone("mixamorigLeftFoot", ["LeftFoot", "leftFoot", "Foot_L", "LeftToeBase"]));
+      storeBone("rightFoot", getBone("mixamorigRightFoot", ["RightFoot", "rightFoot", "Foot_R", "RightToeBase"]));
     }
   }, [scene, nodes]);
-
-  useEffect(() => {
-    if (group.current) {
-      baseGroupPosition.current.copy(group.current.position);
-      baseGroupRotation.current.copy(group.current.rotation);
-    }
-    
-    window.receiveRNMessage = (data) => {
-      const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-      if (parsed?.type === 'LIVE_POSE') {
-        latestJoints.current = smoothPose(parsed.joints);
-      }
-    };
-
-    if (window.ReactNativeWebView) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'WEBVIEW_READY' }));
-    }
-  }, []);
 
   const resetBoneToRest = (bone) => {
     if (!bone || !bone.userData.baseQuaternion) return;
@@ -242,24 +283,12 @@ export const Avatar = ({ ...props }) => {
     bone.position.lerp(bone.userData.basePosition, speed);
   };
 
-  const applySquatBend = (bone, axis, angle, speed = 0.16) => {
+  const applySquatBend = (bone, axis, angle, speed = 0.14) => {
     if (!bone?.userData.baseQuaternion) return;
-    const bendQuat = new THREE.Quaternion().setFromAxisAngle(axis, angle);
-    bone.quaternion.slerp(
-      bone.userData.baseQuaternion.clone().multiply(bendQuat),
-      speed
-    );
+    _q1.setFromAxisAngle(axis, angle);
+    _q2.copy(bone.userData.baseQuaternion).multiply(_q1);
+    bone.quaternion.slerp(_q2, speed);
   };
-
-  const wrapAngle = (angle) => ((angle + Math.PI) % (Math.PI * 2)) - Math.PI;
-
-  const isVisible = (id) => {
-    const joint = latestJoints.current?.[id];
-    if (!joint) return false;
-    return joint.visibility === undefined || joint.visibility > 0.35;
-  };
-
-  const getJoint = (id) => latestJoints.current?.[id];
 
   const midpoint = (a, b) => ({
     x: (a.x + b.x) / 2,
@@ -275,78 +304,63 @@ export const Avatar = ({ ...props }) => {
     const lShoulder = getJoint(MP.L_SHOULDER);
     const rShoulder = getJoint(MP.R_SHOULDER);
 
-    if (
-      lHip && rHip && lShoulder && rShoulder &&
-      isVisible(MP.L_HIP) && isVisible(MP.R_HIP) &&
-      isVisible(MP.L_SHOULDER) && isVisible(MP.R_SHOULDER)
-    ) {
-      const hips = midpoint(lHip, rHip);
-      const shoulders = midpoint(lShoulder, rShoulder);
-      return midpoint(hips, shoulders);
+    if (lHip && rHip && lShoulder && rShoulder && isVisible(MP.L_HIP) && isVisible(MP.R_HIP) && isVisible(MP.L_SHOULDER) && isVisible(MP.R_SHOULDER)) {
+      return midpoint(midpoint(lHip, rHip), midpoint(lShoulder, rShoulder));
     }
-
     if (lHip && rHip && isVisible(MP.L_HIP) && isVisible(MP.R_HIP)) {
       return midpoint(lHip, rHip);
     }
-
     return null;
   };
 
   const applyBoneDirection = (bone, worldDir, speed = 0.25) => {
     if (!bone) return;
-
     if (!worldDir || worldDir.lengthSq() < 0.00001) {
       resetBoneToRest(bone);
       return;
     }
 
-    const localDir = worldDir.clone().normalize();
+    _vDir.copy(worldDir).normalize();
     if (bone.parent) {
       bone.parent.updateMatrixWorld(true);
-      const parentWorldQuat = new THREE.Quaternion();
-      bone.parent.getWorldQuaternion(parentWorldQuat);
-      localDir.applyQuaternion(parentWorldQuat.invert());
+      bone.parent.getWorldQuaternion(_parentWorldQuat);
+      _vDir.applyQuaternion(_parentWorldQuat.invert());
     }
 
-    const restDir = bone.userData.baseDirection || new THREE.Vector3(0, 1, 0).applyQuaternion(bone.userData.baseQuaternion || new THREE.Quaternion().identity());
-    const targetQuaternion = new THREE.Quaternion().setFromUnitVectors(restDir, localDir);
-    const baseQuaternion = bone.userData.baseQuaternion || new THREE.Quaternion().identity();
-    bone.quaternion.slerp(baseQuaternion.clone().multiply(targetQuaternion), speed);
+    const restDir = bone.userData.baseDirection || _v1.set(0, 1, 0).applyQuaternion(bone.userData.baseQuaternion || _q1.identity());
+    _q1.setFromUnitVectors(restDir, _vDir);
+    const baseQuaternion = bone.userData.baseQuaternion || _q2.identity();
+    bone.quaternion.slerp(_q2.copy(baseQuaternion).multiply(_q1), speed);
   };
 
   const clampDirectionFromRest = (bone, worldDir, maxAngle) => {
     if (!bone || !worldDir || worldDir.lengthSq() < 0.00001) return worldDir;
 
-    const localDir = worldDir.clone().normalize();
-
+    _vDir.copy(worldDir).normalize();
     if (bone.parent) {
       bone.parent.updateMatrixWorld(true);
-      const parentWorldQuat = new THREE.Quaternion();
-      bone.parent.getWorldQuaternion(parentWorldQuat);
-      localDir.applyQuaternion(parentWorldQuat.invert());
+      bone.parent.getWorldQuaternion(_parentWorldQuat);
+      _vDir.applyQuaternion(_parentWorldQuat.invert());
     }
 
-    const restDir = bone.userData.baseDirection || new THREE.Vector3(0, 1, 0);
-    const angle = restDir.angleTo(localDir);
+    const restDir = bone.userData.baseDirection || _v1.set(0, 1, 0);
+    const angle = restDir.angleTo(_vDir);
 
     if (angle <= maxAngle) return worldDir;
 
-    const limitedLocalDir = restDir.clone().slerp(localDir, maxAngle / angle).normalize();
+    _vDir.copy(restDir).slerp(_vDir, maxAngle / angle).normalize();
 
     if (bone.parent) {
-      const parentWorldQuat = new THREE.Quaternion();
-      bone.parent.getWorldQuaternion(parentWorldQuat);
-      limitedLocalDir.applyQuaternion(parentWorldQuat);
+      bone.parent.getWorldQuaternion(_parentWorldQuat);
+      _vDir.applyQuaternion(_parentWorldQuat);
     }
 
-    return limitedLocalDir;
+    return _vDir;
   };
 
   const orientBoneSafe = (bone, startId, endId, speed = 0.25, maxAngle = Math.PI) => {
     if (!bone) return;
-
     const joints = latestJoints.current;
-
     if (!joints?.[startId] || !joints?.[endId] || !isVisible(startId) || !isVisible(endId)) {
       resetBoneToRest(bone);
       return;
@@ -354,71 +368,99 @@ export const Avatar = ({ ...props }) => {
 
     const start = joints[startId];
     const end = joints[endId];
+    _v1.set(end.x - start.x, -(end.y - start.y), -(end.z - start.z));
 
-    const worldDir = new THREE.Vector3(
-      end.x - start.x,
-      -(end.y - start.y),
-      -(end.z - start.z)
-    );
-
-    applyBoneDirection(bone, clampDirectionFromRest(bone, worldDir, maxAngle), speed);
+    applyBoneDirection(bone, clampDirectionFromRest(bone, _v1, maxAngle), speed);
   };
 
-  const orientBone = (bone, startId, endId, speed = 0.25) => {
-    if (!bone) return;
+  // Advanced Leg Kinematics Solver
+  const updateLeg = (isLeft) => {
+    const j = latestJoints.current;
+    const bones = bonesRef.current;
 
-    const joints = latestJoints.current;
-    if (!joints?.[startId] || !joints?.[endId] || !isVisible(startId) || !isVisible(endId)) {
-      resetBoneToRest(bone);
+    const hipId = isLeft ? MP.L_HIP : MP.R_HIP;
+    const kneeId = isLeft ? MP.L_KNEE : MP.R_KNEE;
+    const ankleId = isLeft ? MP.L_ANKLE : MP.R_ANKLE;
+
+    const upLegBone = isLeft ? bones.leftUpLeg : bones.rightUpLeg;
+    const legBone = isLeft ? bones.leftLeg : bones.rightLeg;
+    const kneeAngleRef = isLeft ? kneeAngleLeftRef : kneeAngleRightRef;
+
+    if (!j?.[hipId] || !j?.[kneeId] || !isVisible(hipId) || !isVisible(kneeId) || !upLegBone) {
+      kneeAngleRef.current = THREE.MathUtils.lerp(kneeAngleRef.current, 180, 0.14);
+      resetBoneToRest(upLegBone);
+      resetBoneToRest(legBone);
       return;
     }
 
-    const start = joints[startId];
-    const end = joints[endId];
+    // Upper Thigh Vector Calculation
+    const hip = j[hipId];
+    const knee = j[kneeId];
+    const dx = knee.x - hip.x;
+    const dy = -(knee.y - hip.y);
+    let dz = -(knee.z - hip.z);
 
-    const worldDir = new THREE.Vector3(
-      end.x - start.x,
-      -(end.y - start.y),
-      -(end.z - start.z)
-    );
+    if (dy < 0) {
+      const downwardRatio = THREE.MathUtils.clamp(-dy / 0.2, 0, 1);
+      dz = THREE.MathUtils.lerp(dz, 0, downwardRatio * 0.85);
+    } else if (Math.abs(dy) < 0.12) {
+      dz = Math.max(dz, 0.25);
+    }
 
-    applyBoneDirection(bone, worldDir, speed);
-  };  
+    _v1.set(dx, dy, dz);
+    const clampedThigh = clampDirectionFromRest(upLegBone, _v1, THREE.MathUtils.degToRad(110));
+    applyBoneDirection(upLegBone, clampedThigh, 0.14);
+
+    // Lower Leg Hinge Flexion
+    if (legBone && j[ankleId] && isVisible(kneeId) && isVisible(ankleId)) {
+      let rawAngle = calculate3DAngle(j[hipId], j[kneeId], j[ankleId]) ?? 180;
+
+      const ankle = j[ankleId];
+      const isLegLowered = dy < -0.12;
+      const isAnkleBelowKnee = ankle && ankle.y > knee.y;
+
+      if (isLegLowered && isAnkleBelowKnee) {
+        const straightenFactor = THREE.MathUtils.clamp((-dy - 0.12) / 0.15, 0, 1);
+        rawAngle = THREE.MathUtils.lerp(rawAngle, 180, straightenFactor * 0.85);
+      }
+
+      kneeAngleRef.current = THREE.MathUtils.lerp(kneeAngleRef.current, rawAngle, 0.14);
+
+      const bendDeg = THREE.MathUtils.clamp(180 - kneeAngleRef.current, 0, 135);
+      const bendRad = THREE.MathUtils.degToRad(bendDeg);
+
+      applySquatBend(legBone, BEND_AXIS_X, -bendRad, 0.16);
+    } else {
+      kneeAngleRef.current = THREE.MathUtils.lerp(kneeAngleRef.current, 180, 0.14);
+      resetBoneToRest(legBone);
+    }
+  };
 
   useEffect(() => {
     function download() {
+      if (!group.current) return;
       const exporter = new GLTFExporter();
       exporter.parse(
         group.current,
-        async function (result) {
-          const io = new NodeIO();
-          const document = await io.readBinary(new Uint8Array(result)); 
-          await document.transform(prune(), dedup(), draco(), quantize());
-          const glb = await io.writeBinary(document); 
-          save(new Blob([glb], { type: "application/octet-stream" }), `avatar_${+ new Date()}.glb`);
+        (gltfBuffer) => {
+          const blob = new Blob([gltfBuffer], { type: "application/octet-stream" });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = `avatar_${Date.now()}.glb`;
+          link.click();
+          URL.revokeObjectURL(link.href);
         },
-        function (error) { console.error(error); },
+        (error) => { console.error("Export error:", error); },
         { binary: true }
       );
-    }
-    const link = document.createElement("a");
-    link.style.display = "none";
-    document.body.appendChild(link);
-    function save(blob, filename) {
-      link.href = URL.createObjectURL(blob);
-      link.download = filename;
-      link.click();
     }
     setDownload(download);
   }, [setDownload]);
 
   useEffect(() => {
-    const isLiveMode =
-      new URLSearchParams(window.location.search).get('mode') === 'live' ||
-      !!latestJoints.current;
-
+    const isLiveMode = new URLSearchParams(window.location.search).get("mode") === "live" || !!latestJoints.current;
     if (isLiveMode) {
-      mixer.stopAllAction(); 
+      mixer.stopAllAction();
       return;
     }
     if (actions[pose]) {
@@ -435,117 +477,32 @@ export const Avatar = ({ ...props }) => {
 
     try {
       const bones = bonesRef.current;
+      const now = performance.now();
 
-      const isLiveMode =
-        new URLSearchParams(window.location.search).get('mode') === 'live' ||
-        !!latestJoints.current;
+      // Check for stale pose frame timeout (>300ms)
+      if (now - lastPoseTimestamp.current > POSE_TIMEOUT_MS) {
+        latestJoints.current = null;
+      }
+
+      const isLiveMode = !!latestJoints.current;
+
+      // Stop animation clips from overwriting bones during live pose tracking
+      if (isLiveMode && mixer) {
+        mixer.stopAllAction();
+      }
 
       const torsoVisible = isLiveMode && hasStableTorso();
       torsoVisibleRef.current = torsoVisible;
 
-      // --- SQUAT & ANCHORED SCREEN-SPACE TRACKING ---
-      if (isLiveMode && latestJoints.current?.[MP.L_HIP] && latestJoints.current?.[MP.R_HIP]) {
-        const bodyCenter = getBodyCenter();
-
-        if (bodyCenter) {
-          const centerScreenX = getScreenX(bodyCenter);
-          const centerScreenY = getScreenY(bodyCenter);
-
-          if (!trackingOriginRef.current && centerScreenX !== null && centerScreenY !== null) {
-            trackingOriginRef.current = {
-              screenX: centerScreenX,
-              screenY: centerScreenY,
-            };
-          }
-
-          let crouchAmount = 0;
-          const lHip = latestJoints.current[MP.L_HIP];
-          const rHip = latestJoints.current[MP.R_HIP];
-
-          const lHipScreenY = getScreenY(lHip);
-          const rHipScreenY = getScreenY(rHip);
-
-          if (lHipScreenY !== null && rHipScreenY !== null) {
-            const currentHipY = (lHipScreenY + rHipScreenY) / 2;
-
-            if (!calibrationRef.current) {
-              calibrationRef.current = {
-                standingHipY: currentHipY,
-                standingTorsoHeight: 0.25,
-              };
-            }
-
-            let standingHipY = calibrationRef.current.standingHipY;
-
-            if (currentHipY < standingHipY) {
-              calibrationRef.current.standingHipY = THREE.MathUtils.lerp(
-                standingHipY,
-                currentHipY,
-                0.15
-              );
-              standingHipY = calibrationRef.current.standingHipY;
-            }
-
-            const hipDrop = currentHipY - standingHipY;
-
-            crouchAmount = THREE.MathUtils.clamp(
-              hipDrop / 0.10,
-              0,
-              0.85
-            );
-          }
-
-          squatAmountRef.current = THREE.MathUtils.lerp(
-            squatAmountRef.current,
-            crouchAmount,
-            0.18
-          );
-
-          liveGroupPosition.current.x = 0;
-          liveGroupPosition.current.y = LIVE_AVATAR_BASE_Y;
-          liveGroupPosition.current.z = 0.02;
-
-          if (bones.hips?.userData.basePosition) {
-            const targetHipPosition = bones.hips.userData.basePosition.clone();
-            targetHipPosition.y -= squatAmountRef.current * 4;
-            targetHipPosition.z += squatAmountRef.current * 1;
-
-            bones.hips.position.lerp(targetHipPosition, 0.12);
-          }
-
-          // Shoulder tilt
-          const lShoulder = latestJoints.current[MP.L_SHOULDER];
-          const rShoulder = latestJoints.current[MP.R_SHOULDER];
-          const lShoulderScreenY = getScreenY(lShoulder);
-          const rShoulderScreenY = getScreenY(rShoulder);
-
-          if (lShoulderScreenY !== null && rShoulderScreenY !== null && bones.leftShoulder && bones.rightShoulder) {
-            const shoulderTilt = lShoulderScreenY - rShoulderScreenY;
-            const tiltAmount = THREE.MathUtils.clamp(shoulderTilt * 1.8, -0.35, 0.35);
-
-            const leftBaseQuat = bones.leftShoulder.userData.baseQuaternion;
-            const rightBaseQuat = bones.rightShoulder.userData.baseQuaternion;
-
-            if (leftBaseQuat && rightBaseQuat) {
-              const leftTiltQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -tiltAmount);
-              const rightTiltQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -tiltAmount);
-
-              bones.leftShoulder.quaternion.slerp(leftBaseQuat.clone().multiply(leftTiltQuat), 0.12);
-              bones.rightShoulder.quaternion.slerp(rightBaseQuat.clone().multiply(rightTiltQuat), 0.12);
-            }
-          }
-        } else {
-          liveGroupPosition.current.set(0, LIVE_AVATAR_BASE_Y, 0.02);
-          resetBonePosition(bones.hips, 0.18);
-
-          squatAmountRef.current = THREE.MathUtils.lerp(
-            squatAmountRef.current,
-            0,
-            0.12
-          );
-        }
+      // 1. Camera Framing
+      if (camera) {
+        const targetCamZ = isLiveMode ? 3.8 : 2.8;
+        const targetCamY = isLiveMode ? 0.9 : 0.8;
+        camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetCamZ, 0.08);
+        camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCamY, 0.08);
       }
 
+      // Group Base Position & Rotation
       if (group.current) {
         const targetPosition = isLiveMode ? liveGroupPosition.current : baseGroupPosition.current;
         const targetRotation = isLiveMode ? liveGroupRotation.current : baseGroupRotation.current;
@@ -558,7 +515,8 @@ export const Avatar = ({ ...props }) => {
         }
       }
 
-      if (!latestJoints.current) {
+      // Fallback to rest position if no live tracking data is active
+      if (!isLiveMode) {
         Object.values(bones).forEach(resetBoneToRest);
         resetBonePosition(bones.hips, 0.18);
         bones.hips?.updateMatrixWorld(true);
@@ -566,207 +524,184 @@ export const Avatar = ({ ...props }) => {
         return;
       }
 
-      // --- UPPER BODY TRACKING ---
-      orientBoneSafe(bones.leftArm, MP.L_SHOULDER, MP.L_ELBOW, 0.12, THREE.MathUtils.degToRad(115));
-      orientBoneSafe(bones.leftForeArm, MP.L_ELBOW, MP.L_WRIST, 0.14, THREE.MathUtils.degToRad(145));
-      orientBoneSafe(bones.rightArm, MP.R_SHOULDER, MP.R_ELBOW, 0.12, THREE.MathUtils.degToRad(115));
-      orientBoneSafe(bones.rightForeArm, MP.R_ELBOW, MP.R_WRIST, 0.14, THREE.MathUtils.degToRad(145));
+      // 2. Controlled Hip Squat
+      const isSeated = isSeatedRef.current;
+      if (latestJoints.current[MP.L_HIP] && latestJoints.current[MP.R_HIP]) {
+        const bodyCenter = getBodyCenter();
+        if (bodyCenter) {
+          const centerScreenX = getScreenX(bodyCenter);
+          const centerScreenY = getScreenY(bodyCenter);
 
-      resetBoneToRest(bones.leftHand);
-      resetBoneToRest(bones.rightHand);
+          if (!trackingOriginRef.current && centerScreenX !== null && centerScreenY !== null) {
+            trackingOriginRef.current = { screenX: centerScreenX, screenY: centerScreenY };
+          }
 
-      // --- LOWER BODY LEG ORIENTATION TRANSFORMS ---
-      if (!isLiveMode) {
-        orientBone(bones.leftUpLeg, MP.L_HIP, MP.L_KNEE, 0.08);
-        orientBone(bones.leftLeg, MP.L_KNEE, MP.L_ANKLE, 0.06);
-        orientBone(bones.rightUpLeg, MP.R_HIP, MP.R_KNEE, 0.08);
-        orientBone(bones.rightLeg, MP.R_KNEE, MP.R_ANKLE, 0.06);
+          let crouchAmount = 0;
+          const lHipScreenY = getScreenY(latestJoints.current[MP.L_HIP]);
+          const rHipScreenY = getScreenY(latestJoints.current[MP.R_HIP]);
+
+          if (!isSeated && lHipScreenY !== null && rHipScreenY !== null) {
+            const currentHipY = (lHipScreenY + rHipScreenY) / 2;
+
+            // baseline calibration (Prevents autonomous downward drifting)
+            if (!calibrationRef.current) {
+              calibrationRef.current = { standingHipY: currentHipY };
+            }
+
+            const hipDrop = currentHipY - calibrationRef.current.standingHipY;
+            const DROP_THRESHOLD = 0.035;
+
+            if (hipDrop > DROP_THRESHOLD) {
+              // Relaxed divisor from 0.08 to 0.14 for a more gradual, natural sit
+              crouchAmount = THREE.MathUtils.clamp((hipDrop - DROP_THRESHOLD) / 0.14, 0, 1.0);
+            }
+          }
+
+          squatAmountRef.current = THREE.MathUtils.lerp(squatAmountRef.current, isSeated ? 0 : crouchAmount, 0.18);
+
+          if (bones.hips?.userData.basePosition) {
+            _v1.copy(bones.hips.userData.basePosition);
+            if (isSeated) {
+              _v1.y -= 15.0;
+              _v1.z += 5.0;
+            } else {
+              const maxSquatDrop = 12.0;
+              _v1.y -= squatAmountRef.current * maxSquatDrop;
+              _v1.z += squatAmountRef.current * 3.0;
+            }
+            bones.hips.position.lerp(_v1, 0.12);
+          }
+        }
       }
 
-      orientBone(bones.leftFoot, MP.L_ANKLE, MP.L_FOOT_INDEX, 0.06);
-      orientBone(bones.rightFoot, MP.R_ANKLE, MP.R_FOOT_INDEX, 0.06);
-
-      // --- SPINE & TORSO ROTATIONS ---
+      // 3. Spine & Torso Rotation
       if (
-        bones.spine && 
-        latestJoints.current[MP.L_SHOULDER] && 
-        latestJoints.current[MP.R_SHOULDER] && 
-        latestJoints.current[MP.L_HIP] && 
+        bones.spine &&
+        latestJoints.current[MP.L_SHOULDER] &&
+        latestJoints.current[MP.R_SHOULDER] &&
+        latestJoints.current[MP.L_HIP] &&
         latestJoints.current[MP.R_HIP] &&
         isVisible(MP.L_SHOULDER) &&
-        isVisible(MP.R_SHOULDER) &&
-        isVisible(MP.L_HIP) &&
-        isVisible(MP.R_HIP)
+        isVisible(MP.R_SHOULDER)
       ) {
         const lShoulder = latestJoints.current[MP.L_SHOULDER];
         const rShoulder = latestJoints.current[MP.R_SHOULDER];
         const lHip = latestJoints.current[MP.L_HIP];
         const rHip = latestJoints.current[MP.R_HIP];
 
-        const midShoulder = {
-          x: (lShoulder.x + rShoulder.x) / 2,
-          y: (lShoulder.y + rShoulder.y) / 2,
-          z: (lShoulder.z + rShoulder.z) / 2
-        };
-        const midHip = {
-          x: (lHip.x + rHip.x) / 2,
-          y: (lHip.y + rHip.y) / 2,
-          z: (lHip.z + rHip.z) / 2
-        };
-
-        // 1. Spine Lean / Tilt (Pitch & Roll)
-        const torsoDir = new THREE.Vector3(
-          (midShoulder.x - midHip.x) * 0.12,
-          0.9 + (-(midShoulder.y - midHip.y) * 0.03),
-          (-(midShoulder.z - midHip.z)) * 0.12
+        _v1.set(
+          (lShoulder.x + rShoulder.x - lHip.x - rHip.x) * 0.06,
+          0.9 + (-(lShoulder.y + rShoulder.y - lHip.y - rHip.y) * 0.015),
+          (-(lShoulder.z + rShoulder.z - lHip.z - rHip.z)) * 0.06
         );
 
-        if (torsoDir.lengthSq() > 0.00001) {
-          applyBoneDirection(bones.spine, torsoDir, 0.005);
+        if (_v1.lengthSq() > 0.00001) {
+          applyBoneDirection(bones.spine, _v1, 0.05);
         }
 
-        // 2. True Body Turning (Yaw)
         if (torsoVisible && group.current) {
-          const shoulderDx = lShoulder.x - rShoulder.x;
-          const hipDx = lHip.x - rHip.x;
-          const bodyDx = (shoulderDx + hipDx) * 0.5;
-
-          // Scale up depth (Z) to match screen X coordinates
-          const Z_SCALE = 3.0;
-          const shoulderDz = -(lShoulder.z - rShoulder.z) * Z_SCALE;
-          const hipDz = -(lHip.z - rHip.z) * Z_SCALE;
-          const bodyDz = (shoulderDz + hipDz) * 0.5;
-
+          const bodyDx = (lShoulder.x - rShoulder.x + lHip.x - rHip.x) * 0.5;
+          const bodyDz = (-(lShoulder.z - rShoulder.z) * 3.0 + -(lHip.z - rHip.z) * 3.0) * 0.5;
           let rawYaw = 0;
 
-          // Use depth if Z tracking is active
           if (Math.abs(bodyDz) > 0.001) {
             rawYaw = Math.atan2(bodyDz, bodyDx);
           } else {
-            // Fallback for flat Z: turn using nose position relative to shoulders
             const nose = latestJoints.current[MP.NOSE];
             if (nose) {
-              const shoulderMidX = (lShoulder.x + rShoulder.x) / 2;
-              const shoulderWidth = Math.abs(bodyDx) || 0.2;
-              const noseOffset = (nose.x - shoulderMidX) / shoulderWidth;
+              const noseOffset = (nose.x - (lShoulder.x + rShoulder.x) / 2) / (Math.abs(bodyDx) || 0.2);
               rawYaw = THREE.MathUtils.clamp(noseOffset * 1.2, -0.8, 0.8);
             }
           }
 
-          const DEADZONE = THREE.MathUtils.degToRad(2.5); // Reduced deadzone
-          const MAX_YAW = THREE.MathUtils.degToRad(50);    // Max allowed body turn angle
-
-          let desiredYaw = 0;
-          if (Math.abs(rawYaw) > DEADZONE) {
-            desiredYaw = rawYaw;
-          }
-
+          const DEADZONE = THREE.MathUtils.degToRad(2.0);
+          const MAX_YAW = THREE.MathUtils.degToRad(75);
+          let desiredYaw = Math.abs(rawYaw) > DEADZONE ? rawYaw : 0;
           desiredYaw = THREE.MathUtils.clamp(desiredYaw, -MAX_YAW, MAX_YAW);
 
-          turnTargetRef.current = THREE.MathUtils.lerp(
-            turnTargetRef.current,
-            desiredYaw,
-            0.15
-          );
+          turnTargetRef.current = THREE.MathUtils.lerp(turnTargetRef.current, desiredYaw, 0.15);
         }
       } else {
         resetBoneToRest(bones.spine);
         turnTargetRef.current = THREE.MathUtils.lerp(turnTargetRef.current, 0, 0.1);
       }
 
-      // --- NECK TRACKING ---
-      if (
-        bones.neck && 
-        latestJoints.current[MP.L_SHOULDER] && 
-        latestJoints.current[MP.R_SHOULDER] && 
-        latestJoints.current[MP.NOSE] &&
-        isVisible(MP.L_SHOULDER) &&
-        isVisible(MP.R_SHOULDER) &&
-        isVisible(MP.NOSE)
-      ) {
-        const midShoulder = {
-          x: (latestJoints.current[MP.L_SHOULDER].x + latestJoints.current[MP.R_SHOULDER].x) / 2,
-          y: (latestJoints.current[MP.L_SHOULDER].y + latestJoints.current[MP.R_SHOULDER].y) / 2,
-          z: (latestJoints.current[MP.L_SHOULDER].z + latestJoints.current[MP.R_SHOULDER].z) / 2
-        };
+      bones.spine?.updateMatrixWorld(true);
+
+      // 4. Neck & Head
+      if (bones.neck && latestJoints.current[MP.L_SHOULDER] && latestJoints.current[MP.R_SHOULDER] && latestJoints.current[MP.NOSE] && isVisible(MP.NOSE)) {
         const nose = latestJoints.current[MP.NOSE];
+        const midX = (latestJoints.current[MP.L_SHOULDER].x + latestJoints.current[MP.R_SHOULDER].x) / 2;
+        const midY = (latestJoints.current[MP.L_SHOULDER].y + latestJoints.current[MP.R_SHOULDER].y) / 2;
+        const midZ = (latestJoints.current[MP.L_SHOULDER].z + latestJoints.current[MP.R_SHOULDER].z) / 2;
 
-        const neckDir = new THREE.Vector3(
-          (nose.x - midShoulder.x) * 0.01,
-          -(nose.y - midShoulder.y) * 0.15,
-          -(nose.z - midShoulder.z) * 0.01
-        );
-
-        if (neckDir.lengthSq() > 0.00001) {
-          applyBoneDirection(bones.neck, neckDir, 0.02);
-        }
+        _v1.set((nose.x - midX) * 0.01, -(nose.y - midY) * 0.15, -(nose.z - midZ) * 0.01);
+        if (_v1.lengthSq() > 0.00001) applyBoneDirection(bones.neck, _v1, 0.02);
       } else {
         resetBoneToRest(bones.neck);
       }
 
-      // --- HEAD TRACKING ---
-      if (
-        bones.head && 
-        latestJoints.current[MP.L_EYE] && 
-        latestJoints.current[MP.R_EYE] && 
-        latestJoints.current[MP.NOSE] &&
-        isVisible(MP.L_EYE) &&
-        isVisible(MP.R_EYE) &&
-        isVisible(MP.NOSE)
-      ) {
-        const leftEye = latestJoints.current[MP.L_EYE];
-        const rightEye = latestJoints.current[MP.R_EYE];
+      if (bones.head && latestJoints.current[MP.L_EYE] && latestJoints.current[MP.R_EYE] && latestJoints.current[MP.NOSE] && isVisible(MP.NOSE)) {
+        const lEye = latestJoints.current[MP.L_EYE];
+        const rEye = latestJoints.current[MP.R_EYE];
         const nose = latestJoints.current[MP.NOSE];
 
-        const headDir = new THREE.Vector3(
-          (rightEye.x - leftEye.x) * 0.005,
-          0,
-          -(nose.z - (leftEye.z + rightEye.z) / 2) * 0.005
-        );
-
-        if (headDir.lengthSq() > 0.00001) {
-          applyBoneDirection(bones.head, headDir, 0.025);
-        }
+        _v1.set((rEye.x - lEye.x) * 0.005, 0, -(nose.z - (lEye.z + rEye.z) / 2) * 0.005);
+        if (_v1.lengthSq() > 0.00001) applyBoneDirection(bones.head, _v1, 0.025);
       } else {
         resetBoneToRest(bones.head);
       }
 
-      if (isLiveMode && group.current) {
-        if (torsoVisibleRef.current) {
-          const yawDelta = wrapAngle(turnTargetRef.current - group.current.rotation.y);
-          group.current.rotation.y += yawDelta * 0.12; 
-        } else {
-          turnTargetRef.current = THREE.MathUtils.lerp(turnTargetRef.current, 0, 0.08);
-          group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, 0, 0.08);
+      // 5. Upper Body Arms
+      const lShoulder = latestJoints.current[MP.L_SHOULDER];
+      const rShoulder = latestJoints.current[MP.R_SHOULDER];
+      if (lShoulder && rShoulder && bones.leftShoulder && bones.rightShoulder) {
+        const lY = getScreenY(lShoulder);
+        const rY = getScreenY(rShoulder);
+        if (lY !== null && rY !== null) {
+          const tiltAmount = THREE.MathUtils.clamp((lY - rY) * 1.8, -0.35, 0.35);
+          applySquatBend(bones.leftShoulder, BEND_AXIS_Z, -tiltAmount, 0.12);
+          applySquatBend(bones.rightShoulder, BEND_AXIS_Z, -tiltAmount, 0.12);
+
+          if (bones.spine) {
+            applySquatBend(bones.spine, BEND_AXIS_Z, -tiltAmount * 0.5, 0.12);
+          }
         }
       }
 
-      if (!isLiveMode) {
-        resetBoneToRest(bones.hips);
-      }
+      orientBoneSafe(bones.leftArm, MP.L_SHOULDER, MP.L_ELBOW, 0.14, THREE.MathUtils.degToRad(175));
+      orientBoneSafe(bones.leftForeArm, MP.L_ELBOW, MP.L_WRIST, 0.16, THREE.MathUtils.degToRad(145));
 
-      // --- SQUAT BENDING (LIVE MODE) ---
+      orientBoneSafe(bones.rightArm, MP.R_SHOULDER, MP.R_ELBOW, 0.14, THREE.MathUtils.degToRad(175));
+      orientBoneSafe(bones.rightForeArm, MP.R_ELBOW, MP.R_WRIST, 0.16, THREE.MathUtils.degToRad(145));
+
+      resetBoneToRest(bones.leftHand);
+      resetBoneToRest(bones.rightHand);
+
+      // 6. Stable Leg Tracking
       if (isLiveMode) {
-        const squat = squatAmountRef.current;
-
-        const thighBend = squat * THREE.MathUtils.degToRad(52);
-        const shinBend = squat * THREE.MathUtils.degToRad(65);
-        const torsoLean = squat * THREE.MathUtils.degToRad(8);
-
-        const bendAxis = new THREE.Vector3(1, 0, 0);
-
-        applySquatBend(bones.leftUpLeg, bendAxis, -thighBend, 0.18);
-        applySquatBend(bones.rightUpLeg, bendAxis, -thighBend, 0.18);
-
-        applySquatBend(bones.leftLeg, bendAxis, shinBend, 0.18);
-        applySquatBend(bones.rightLeg, bendAxis, shinBend, 0.18);
-
-        applySquatBend(bones.spine, bendAxis, torsoLean, 0.1);
+        updateLeg(true);  // Left leg kinematics
+        updateLeg(false); // Right leg kinematics
+      } else {
+        resetBoneToRest(bones.leftUpLeg);
+        resetBoneToRest(bones.leftLeg);
+        resetBoneToRest(bones.rightUpLeg);
+        resetBoneToRest(bones.rightLeg);
       }
 
+      // 7. Feet Alignment
+      orientBoneSafe(bones.leftFoot, MP.L_ANKLE, MP.L_FOOT_INDEX, 0.08, THREE.MathUtils.degToRad(45));
+      orientBoneSafe(bones.rightFoot, MP.R_ANKLE, MP.R_FOOT_INDEX, 0.08, THREE.MathUtils.degToRad(45));
+
+      // Smooth Group Yaw Sync (Eliminates sudden 360-degree snap spins)
+      if (isLiveMode && group.current) {
+        const targetYaw = torsoVisibleRef.current ? turnTargetRef.current * 0.6 : 0;
+        group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, targetYaw, 0.12);
+      }
+
+      // 8. Final Skeleton Sync
       if (bones.hips) bones.hips.updateMatrixWorld(true);
       nodes.Plane.skeleton.update();
-
     } catch (err) {
       if (shouldLogDiag) console.warn("Realtime mapping step missed:", err);
     }
@@ -790,7 +725,7 @@ export const Avatar = ({ ...props }) => {
           />
           <primitive object={nodes.mixamorigHips} />
           {Object.keys(customization).map(
-            (key) => 
+            (key) =>
               customization[key]?.asset?.url && (
                 <Suspense key={customization[key].asset?.id || key} fallback={null}>
                   <Asset
@@ -807,4 +742,4 @@ export const Avatar = ({ ...props }) => {
   );
 };
 
-useGLTF.preload('/models/Armature.glb');
+useGLTF.preload("/models/Armature.glb");
