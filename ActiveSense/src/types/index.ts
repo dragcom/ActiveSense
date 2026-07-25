@@ -29,6 +29,7 @@ export type AvatarProfileConfig = {
 // UserStats tracks the simple progress counters shown throughout the app.
 export type UserStats = {
   healthpoints: number;
+  lifetimeHealthpoints: number;
   streakDays: number;
   totalWorkouts: number;
 };
@@ -114,6 +115,15 @@ export type RewardVoucher = {
   category: string;
 };
 
+// RedeemedVoucher stores the scannable claim code shown after redemption.
+export type RedeemedVoucher = {
+  voucherId: number;
+  redemptionCode: string;
+  redeemedAt?: string;
+  usedAt?: string | null;
+  usedBy?: string | null;
+};
+
 // Achievement describes a progress milestone before the UI adds unlocked state.
 export type Achievement = {
   id: number;
@@ -136,16 +146,6 @@ export type MedicalConditionOption = {
   id: number;
   category: string;
   label: string;
-};
-
-// ProfileMenuItem keeps the Profile screen's menu rows data-driven.
-export type ProfileMenuItem = {
-  id: number;
-  icon: string;
-  label: string;
-  badge?: string;
-  actionKey?: 'settings' | 'notifications' | 'support' | 'privacy' | 'logout';
-  color: string;
 };
 
 // WorkoutSession is the local history entry saved when a workout finishes.

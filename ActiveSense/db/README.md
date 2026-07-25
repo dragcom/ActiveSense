@@ -13,9 +13,11 @@ The schema keeps the model intentionally small and relational:
 - `pose_training_samples`: classifier examples linked to `exercise_types`.
 - `user_profiles`, `user_profile_medical_conditions`, `user_stats`, `workout_sessions`, `workout_session_exercise_results`: normalized user profile, health constraints, progress, and future per-exercise analytics.
 - `reward_vouchers`, `voucher_redemptions`, `achievements`: Healthpoints rewards and milestones.
-- `app_option_groups`, `app_options`, `app_settings`, `app_pages`: configurable app copy/options without many tiny tables.
+- `app_option_groups`, `app_options`, `app_settings`, `app_pages`: configurable app choices/settings without many tiny tables.
 
 The seed file inserts the current strength and healthy-ageing catalogs and deactivates older workout rows without deleting historical session records.
+
+`user_stats.healthpoints` is the spendable reward balance. `user_stats.lifetime_healthpoints` is total earned forever and is used for lifetime achievements, so redeeming a voucher does not relock earned milestones. `voucher_redemptions.redemption_code` stores the barcode value shown on redeemed coupons, while `used_at` and `used_by` record whether a merchant/demo scanner has consumed it.
 
 ## Create And Populate Supabase
 
@@ -40,13 +42,21 @@ The seed file inserts the current strength and healthy-ageing catalogs and deact
 
 If `psql` is not installed, install PostgreSQL locally or paste `schema.sql` then `seed.sql` into Supabase SQL Editor and run them in that order.
 
+For an existing ActiveSense Supabase database created before lifetime Healthpoints, paste and run `migration_lifetime_healthpoints_redemptions.sql` once, then rerun `seed.sql`.
+
+To simulate a merchant scanner in SQL or an admin tool, call:
+
+```sql
+select * from public.mark_voucher_used('AS-EXAMPLECODE', 'NTUC demo counter');
+```
+
 5. Verify the app can read catalog data, register a user, save profile choices, link medical conditions, and complete a workout:
 
    ```sh
    npm run db:verify
    ```
 
-   To also verify that deleting a Supabase Auth user cascades through all user-owned public rows, put a local-only service-role key in `.env`:
+   To also verify that deleting a Supabase Auth user cascades through all user-owned public rows, put a local-only service-role key in `.env.local`:
 
    ```sh
    SUPABASE_SERVICE_ROLE_KEY=<service-role-key>

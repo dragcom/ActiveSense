@@ -3,28 +3,34 @@ import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import IconBadge from '../components/IconBadge';
 import { db } from '../services/database';
 import {
   defaultStats,
-  getRedeemedVouchers,
+  getRedeemedVoucherEntries,
   getStats,
   getWeeklyActivity,
   redeemVoucher,
 } from '../services/storage';
-import { Achievement, RewardVoucher, WeeklyActivity } from '../types';
+import { Achievement, RedeemedVoucher, RewardVoucher, UserStats, WeeklyActivity } from '../types';
+import { RootStackParamList } from '../navigation/types';
 
 type AchievementDisplay = Achievement & { unlocked: boolean };
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 // ProgressScreen shows Healthpoints, weekly activity, rewards, and achievements.
 export default function ProgressScreen() {
+  const navigation = useNavigation<NavigationProp>();
   // Progress data comes from Supabase when signed in, with local fallback for prototype runs.
-  const [healthpoints, setHealthpoints] = useState(defaultStats.healthpoints);
+  const [stats, setStats] = useState<UserStats>(defaultStats);
   const [weeklyData, setWeeklyData] = useState<WeeklyActivity[]>([]);
   const [vouchers, setVouchers] = useState<RewardVoucher[]>([]);
   const [achievements, setAchievements] = useState<AchievementDisplay[]>([]);
   const [redeemedVouchers, setRedeemedVouchers] = useState<number[]>([]);
+  const [redeemedVoucherEntries, setRedeemedVoucherEntries] = useState<RedeemedVoucher[]>([]);
   const [pendingVoucherIds, setPendingVoucherIds] = useState<number[]>([]);
 
   useEffect(() => {
@@ -36,12 +42,14 @@ export default function ProgressScreen() {
           getWeeklyActivity(),
           db.getRewardVouchers(),
         ]);
-        const storedRedeemedVouchers = await getRedeemedVouchers();
+        const storedRedeemedEntries = await getRedeemedVoucherEntries();
+        const storedRedeemedVouchers = storedRedeemedEntries.map((entry) => entry.voucherId);
         const storedAchievements = await db.getAchievements(storedStats);
-        setHealthpoints(storedStats.healthpoints);
+        setStats(storedStats);
         setWeeklyData(activity);
         setVouchers(rewardVouchers);
         setRedeemedVouchers(storedRedeemedVouchers);
+        setRedeemedVoucherEntries(storedRedeemedEntries);
         setAchievements(storedAchievements);
       } catch (error) {
         Alert.alert('Unable to load stats', 'Please try again later.');
@@ -51,18 +59,44 @@ export default function ProgressScreen() {
     loadProgress();
   }, []);
 
+  const openRedemption = (voucher: RewardVoucher, redemptionCode?: string) => {
+    const existingEntry = redeemedVoucherEntries.find((entry) => entry.voucherId === voucher.id);
+    const existingCode = redemptionCode ?? existingEntry?.redemptionCode;
+    if (!existingCode) {
+      Alert.alert('Coupon unavailable', 'Please refresh your rewards and try again.');
+      return;
+    }
+    navigation.navigate('RewardRedemption', {
+      voucherId: voucher.id,
+      voucherName: voucher.name,
+      voucherCategory: voucher.category,
+      voucherPoints: voucher.points,
+      voucherIcon: voucher.emoji,
+      redemptionCode: existingCode,
+      usedAt: existingEntry?.usedAt,
+      usedBy: existingEntry?.usedBy,
+    });
+  };
+
   const handleRedeem = async (voucher: RewardVoucher) => {
     // Do not redeem if the user cannot afford it or already claimed it.
-    if (healthpoints < voucher.points || redeemedVouchers.includes(voucher.id) || pendingVoucherIds.includes(voucher.id)) {
+    if (stats.healthpoints < voucher.points || pendingVoucherIds.includes(voucher.id)) {
+      return;
+    }
+    if (redeemedVouchers.includes(voucher.id)) {
+      openRedemption(voucher);
       return;
     }
     try {
       // The service handles point deduction through Supabase RPC or local fallback.
       setPendingVoucherIds((current) => [...current, voucher.id]);
-      const { stats, redeemedVoucherIds } = await redeemVoucher(voucher);
-      setHealthpoints(stats.healthpoints);
+      const { stats: nextStats, redeemedVoucherIds, redemptionCode } = await redeemVoucher(voucher);
+      const nextRedeemedEntries = await getRedeemedVoucherEntries();
+      setStats(nextStats);
       setRedeemedVouchers(redeemedVoucherIds);
-      setAchievements(await db.getAchievements(stats));
+      setRedeemedVoucherEntries(nextRedeemedEntries);
+      setAchievements(await db.getAchievements(nextStats));
+      openRedemption(voucher, redemptionCode);
     } catch (error) {
       Alert.alert('Unable to redeem reward', error instanceof Error ? error.message : 'Please try again later.');
     } finally {
@@ -74,15 +108,18 @@ export default function ProgressScreen() {
   const totalWeekly = weeklyData.reduce((sum, day) => sum + day.points, 0);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
         {/* Header highlights the currency users earn from workouts. */}
         <LinearGradient colors={colors.gradient.primary} style={styles.header}>
           <Text style={styles.headerTitle}>Your Progress</Text>
           <View style={styles.healthpointsCard}>
             <View>
               <Text style={styles.hpLabel}>Total Healthpoints</Text>
-              <Text style={styles.hpValue}>{healthpoints.toLocaleString()}</Text>
+              <Text style={styles.hpValue}>{stats.healthpoints.toLocaleString()}</Text>
+              <Text style={styles.hpSubLabel}>
+                {stats.lifetimeHealthpoints.toLocaleString()} lifetime earned
+              </Text>
             </View>
             <Feather name="award" size={48} color="#FBBF24" />
           </View>
@@ -125,7 +162,7 @@ export default function ProgressScreen() {
                 <Text style={styles.sectionTitle}>Rewards Shop</Text>
               </View>
               <View style={styles.hpBadge}>
-                <Text style={styles.hpBadgeText}>{healthpoints} HP</Text>
+                <Text style={styles.hpBadgeText}>{stats.healthpoints} HP</Text>
               </View>
             </View>
             {vouchers.length === 0 && (
@@ -135,7 +172,7 @@ export default function ProgressScreen() {
               </View>
             )}
             {vouchers.map((voucher) => {
-              const canAfford = healthpoints >= voucher.points;
+              const canAfford = stats.healthpoints >= voucher.points;
               const isRedeemed = redeemedVouchers.includes(voucher.id);
               const isRedeeming = pendingVoucherIds.includes(voucher.id);
               return (
@@ -152,8 +189,8 @@ export default function ProgressScreen() {
                       </View>
                     </View>
                   </View>
-                    <TouchableOpacity
-                      disabled={!canAfford || isRedeemed || isRedeeming}
+                  <TouchableOpacity
+                    disabled={(!canAfford && !isRedeemed) || isRedeeming}
                     onPress={() => handleRedeem(voucher)}
                   >
                     <LinearGradient
@@ -174,7 +211,7 @@ export default function ProgressScreen() {
                           !canAfford && !isRedeemed && { color: '#9CA3AF' },
                         ]}
                       >
-                        {isRedeeming ? 'Redeeming' : isRedeemed ? 'Redeemed' : canAfford ? 'Redeem' : 'Locked'}
+                        {isRedeeming ? 'Redeeming' : isRedeemed ? 'Open' : canAfford ? 'Redeem' : 'Locked'}
                       </Text>
                     </LinearGradient>
                   </TouchableOpacity>
@@ -246,6 +283,7 @@ const styles = StyleSheet.create({
   },
   hpLabel: { fontSize: 12, color: 'rgba(255,255,255,0.9)' },
   hpValue: { fontSize: 32, fontWeight: '700', color: '#fff' },
+  hpSubLabel: { marginTop: 4, fontSize: 12, color: 'rgba(255,255,255,0.86)', fontWeight: '600' },
   chartCard: {
     backgroundColor: colors.background.card,
     borderRadius: 16,

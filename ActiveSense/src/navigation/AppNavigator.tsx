@@ -4,8 +4,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import MainTabs from './MainTabs';
 import AuthLandingScreen from '../screens/AuthLandingScreen';
 import LoginScreen from '../screens/LoginScreen';
-import InfoPageScreen from '../screens/InfoPageScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
+import RewardRedemptionScreen from '../screens/RewardRedemptionScreen';
 import WorkoutSessionScreen from '../screens/WorkoutSessionScreen';
 import { RootStackParamList } from './types';
 
@@ -27,7 +27,7 @@ export default function AppNavigator({ initialRouteName }: Props) {
         <Stack.Screen name="AuthLanding" component={AuthLandingScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-        <Stack.Screen name="InfoPage" component={InfoPageScreen} />
+        <Stack.Screen name="RewardRedemption" component={RewardRedemptionScreen} />
         {/* MainTabs contains the four everyday app sections. */}
         <Stack.Screen name="Main" component={MainTabs} />
         {/* Workout sessions take over the whole screen for camera-first tracking. */}
