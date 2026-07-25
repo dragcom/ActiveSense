@@ -1,7 +1,7 @@
 -- pgcrypto provides gen_random_uuid() for user-owned rows.
 create extension if not exists pgcrypto;
 
--- Exercise types are deliberately narrow because ActiveSense only tracks visible strength form.
+-- Exercise types stay limited to movements the 33-point pose model can inspect reliably.
 create table public.exercise_types (
   slug text primary key,
   label text not null unique,

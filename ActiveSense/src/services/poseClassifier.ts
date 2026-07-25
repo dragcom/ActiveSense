@@ -192,6 +192,6 @@ export const createPoseClassifier = (samples: PoseTrainingSample[]) => {
 // Make internal pose labels readable in screen copy.
 export const formatPoseClass = (label: PoseClassLabel) =>
   label
-    .split('-')
+    .split(/[-_]/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');

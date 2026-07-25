@@ -1,31 +1,40 @@
 -- Seed workout categories used for filters and catalog grouping.
 update public.workouts
 set is_active = false
-where id <> 1;
+where id not in (1, 2);
 
 delete from public.workout_exercises
-where workout_id = 1;
+where workout_id in (1, 2);
 
 delete from public.pose_training_samples;
 
 insert into public.exercise_types (slug, label, description, sort_order) values
   ('squat', 'Squat', 'Lower-body strength movement tracked from hip, knee, and ankle landmarks.', 10),
   ('pushup', 'Push-up', 'Upper-body strength movement tracked from shoulder, elbow, and wrist landmarks.', 20),
-  ('lunge', 'Lunge', 'Single-leg strength movement tracked from split stance, hip, knee, and ankle landmarks.', 30)
+  ('lunge', 'Lunge', 'Single-leg strength movement tracked from split stance, hip, knee, and ankle landmarks.', 30),
+  ('sit_to_stand', 'Sit to Stand', 'Low-impact chair strength movement tracked from hip and knee height changes.', 40),
+  ('hip_extension', 'Standing Hip Extension', 'Supported posterior leg raise tracked from hip, knee, and ankle movement.', 50),
+  ('side_leg_raise', 'Side Leg Raise', 'Supported lateral leg raise tracked from hip and ankle movement.', 60),
+  ('single_leg_stand', 'Single Leg Stand', 'Balance hold tracked from one lifted knee and a steady upright torso.', 70),
+  ('march', 'Stationary March', 'Warm-up movement tracked from alternating knee lifts and arm swing.', 80),
+  ('quad_stretch', 'Standing Quadriceps Stretch', 'Standing flexibility hold tracked from one bent knee and upright posture.', 90),
+  ('triceps_stretch', 'Triceps Stretch', 'Upper-body flexibility hold tracked from one raised elbow and wrist position.', 100)
 on conflict (slug) do update set
   label = excluded.label,
   description = excluded.description,
   sort_order = excluded.sort_order;
 
 insert into public.workout_categories (id, name, sort_order) values
-  (1, 'Strength', 10)
+  (1, 'Strength', 10),
+  (2, 'Healthy Ageing', 20)
 on conflict (id) do update set name = excluded.name, sort_order = excluded.sort_order;
 
 -- Seed the main workout catalog shown in Home and Workouts.
 insert into public.workouts
   (id, title, duration_minutes, difficulty, calories, category_id, emoji, gradient_start, gradient_end, description, recommended_min_age, recommended_max_age, is_active, intensity)
 values
-  (1, 'Strength Form Basics', 15, 'Beginner', 105, 1, 'activity', '#14B8A6', '#2563EB', 'Camera-tracked squats, push-ups, and lunges focused on visible, coachable strength form.', null, null, true, 'Low')
+  (1, 'Strength Form Basics', 15, 'Beginner', 105, 1, 'activity', '#14B8A6', '#2563EB', 'Camera-tracked squats, push-ups, and lunges focused on visible, coachable strength form.', null, null, true, 'Low'),
+  (2, 'Healthy Ageing Balance & Strength', 20, 'Low Impact', 90, 2, 'heart', '#0F766E', '#84CC16', 'Gentle camera-tracked strength, balance, and mobility exercises for active ageing.', 50, null, true, 'Low')
 on conflict (id) do update set
   title = excluded.title,
   duration_minutes = excluded.duration_minutes,
@@ -47,7 +56,14 @@ insert into public.workout_exercises
 values
   (1, 'Squats', 3, 10, 50, 10, 'squat', 'Keep knees aligned with toes and chest lifted.'),
   (1, 'Push-ups', 3, 8, 50, 20, 'pushup', 'Keep shoulders, hips, and heels in one strong line.'),
-  (1, 'Lunges', 3, 8, 50, 30, 'lunge', 'Step into a split stance, keep your chest tall, then drive back up.')
+  (1, 'Lunges', 3, 8, 50, 30, 'lunge', 'Step into a split stance, keep your chest tall, then drive back up.'),
+  (2, 'Stationary March with Arm Swing', 2, 20, 30, 10, 'march', 'Stand tall and lift each knee gently while swinging your arms.'),
+  (2, 'Sit to Stand', 3, 10, 40, 20, 'sit_to_stand', 'Lean forward slightly, stand tall, then lower with control.'),
+  (2, 'Standing Hip Extension', 2, 10, 35, 30, 'hip_extension', 'Hold steady, keep your chest upright, and move one straight leg backward.'),
+  (2, 'Side Leg Raise', 2, 10, 35, 40, 'side_leg_raise', 'Keep your body tall and lift one straight leg to the side.'),
+  (2, 'Single Leg Stand', 2, 5, 35, 50, 'single_leg_stand', 'Stand tall and lift one knee while keeping your balance.'),
+  (2, 'Triceps Stretch', 2, 5, 25, 60, 'triceps_stretch', 'Raise one elbow overhead and keep your torso upright.'),
+  (2, 'Standing Quadriceps Stretch', 2, 5, 25, 70, 'quad_stretch', 'Stand tall, bend one knee, and keep both thighs close together.')
 on conflict (workout_id, sort_order) do update set
   name = excluded.name,
   sets = excluded.sets,
@@ -64,7 +80,14 @@ insert into public.pose_training_samples (id, label, features) values
   (3, 'pushup', array[105,108,162,160,174,172,20,0.38,0.62,0.26]::double precision[]),
   (4, 'pushup', array[82,86,166,164,172,173,16,0.34,0.70,0.25]::double precision[]),
   (5, 'lunge', array[164,162,92,128,102,118,78,1.65,1.02,2.20]::double precision[]),
-  (6, 'lunge', array[166,164,118,88,116,98,82,1.58,1.04,2.05]::double precision[])
+  (6, 'lunge', array[166,164,118,88,116,98,82,1.58,1.04,2.05]::double precision[]),
+  (7, 'sit_to_stand', array[168,168,96,98,78,80,72,1.12,0.72,0.50]::double precision[]),
+  (8, 'hip_extension', array[168,168,164,170,144,166,86,1.40,0.50,2.25]::double precision[]),
+  (9, 'side_leg_raise', array[168,168,170,156,170,142,88,1.38,0.48,2.45]::double precision[]),
+  (10, 'single_leg_stand', array[166,166,92,168,90,168,88,1.25,0.50,1.30]::double precision[]),
+  (11, 'march', array[150,150,88,166,92,164,86,1.20,0.85,1.45]::double precision[]),
+  (12, 'quad_stretch', array[164,164,52,168,88,168,86,1.20,0.50,1.20]::double precision[]),
+  (13, 'triceps_stretch', array[58,164,168,168,168,168,88,1.40,1.25,2.30]::double precision[])
 on conflict (id) do update set label = excluded.label, features = excluded.features;
 
 -- Seed rewards that users can redeem with Healthpoints.
@@ -124,7 +147,9 @@ insert into public.app_options (group_id, label, value, metadata, sort_order) va
   (6, 'Breathing difficulty', 'breathing_difficulty', '{"legacy_id":9}'::jsonb, 90),
   (7, 'Recent injury', 'recent_injury', '{"legacy_id":10}'::jsonb, 100),
   (8, 'Build Strength', 'build_strength', '{}'::jsonb, 10),
-  (8, 'Improve Form', 'improve_form', '{}'::jsonb, 20)
+  (8, 'Improve Form', 'improve_form', '{}'::jsonb, 20),
+  (8, 'Improve Balance', 'improve_balance', '{}'::jsonb, 30),
+  (8, 'Age Actively', 'age_actively', '{}'::jsonb, 40)
 on conflict (group_id, label) do update set
   value = excluded.value,
   metadata = excluded.metadata,

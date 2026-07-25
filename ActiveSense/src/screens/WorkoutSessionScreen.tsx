@@ -1,1 +1,1 @@
-export { default } from './WorkoutSessionScreen.ios';
+export { default } from './WorkoutSessionScreen.shared';

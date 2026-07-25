@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import AvatarPoseOverlay from './AvatarPoseOverlay';
 import { colors } from '../theme/colors';
 import { PoseLandmark } from '../types';
@@ -11,6 +11,7 @@ type PoseCameraPreviewProps = {
   overlayMode?: 'avatar' | 'skeleton';
   avatarUrl?: string;
   presentation?: 'card' | 'fill';
+  style?: StyleProp<ViewStyle>;
 };
 
 // Lightweight performance stats are shown in the corner of the web preview.
@@ -188,6 +189,7 @@ export default function PoseCameraPreview({
   overlayMode = 'avatar',
   avatarUrl,
   presentation = 'card',
+  style,
 }: PoseCameraPreviewProps) {
   // Browser-only refs hold DOM elements and the MediaPipe detector instance.
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -307,6 +309,18 @@ export default function PoseCameraPreview({
           }
           const inferenceMs = performance.now() - inferenceStart;
           const poseLandmarks = (result.landmarks?.[0] ?? []).slice(0, 33) as PoseLandmark[];
+          const worldLandmarks = (result.worldLandmarks?.[0] ?? []).slice(0, 33) as PoseLandmark[];
+          const avatarLandmarks = poseLandmarks.map((screenLandmark, index) => {
+            const worldLandmark = worldLandmarks[index];
+            return {
+              x: worldLandmark?.x ?? screenLandmark.x,
+              y: worldLandmark?.y ?? screenLandmark.y,
+              z: worldLandmark?.z ?? screenLandmark.z ?? 0,
+              visibility: worldLandmark?.visibility ?? screenLandmark.visibility,
+              screenX: screenLandmark.x,
+              screenY: screenLandmark.y,
+            };
+          });
 
           // Debug avatar mode draws the 33-point skeleton over the GLB for alignment checks.
           if (overlayMode === 'skeleton' || showPoseDebugOverlay) {
@@ -316,7 +330,7 @@ export default function PoseCameraPreview({
             context?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
           }
           setLandmarks(poseLandmarks);
-          onLandmarks?.(poseLandmarks);
+          onLandmarks?.(avatarLandmarks);
 
           if (now - lastStatsAtRef.current > 250) {
             // Throttle UI stats so React is not updated every camera frame.
@@ -372,7 +386,7 @@ export default function PoseCameraPreview({
   }
 
   return (
-    <View style={[styles.webPanel, presentation === 'fill' && styles.fillPanel]}>
+    <View style={[styles.webPanel, presentation === 'fill' && styles.fillPanel, style]}>
       {React.createElement('video' as any, {
         ref: videoRef,
         muted: true,
