@@ -11,6 +11,59 @@ const WORKOUT_SESSIONS_KEY = 'workout_sessions';
 const REDEEMED_VOUCHERS_KEY = 'redeemed_vouchers';
 const LAST_WORKOUT_DATE_KEY = 'last_workout_date';
 
+export interface DailyActivity {
+  id: string;
+  date: string;     // e.g., "2026-07-25"
+  dayLabel: string; // e.g., "Jul 25"
+  points: number;
+}
+
+export const getDailyActivityFromSessions = (
+  sessions: WorkoutSession[],
+  daysCount: number = 5 // Set how many days to show (e.g., 7 or 14)
+): DailyActivity[] => {
+  // 1. Group points earned by date ("YYYY-MM-DD")
+  const pointsByDate = new Map<string, number>();
+  sessions.forEach((session) => {
+    const dateKey = getLocalDateKey(new Date(session.completedAt));
+    pointsByDate.set(
+      dateKey,
+      (pointsByDate.get(dateKey) ?? 0) + (session.pointsEarned || 0)
+    );
+  });
+
+  const result: DailyActivity[] = [];
+  const today = new Date();
+
+  // 2. Loop backwards from today to build a fixed streak of days
+  for (let i = daysCount - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+
+    const dateStr = getLocalDateKey(d);
+    
+    // Format label: Shows "Today" for today, or "Jul 25" for other dates
+    const isToday = i === 0;
+    const dayLabel = isToday
+      ? 'Today'
+      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    result.push({
+      id: dateStr,
+      date: dateStr,
+      dayLabel,
+      points: pointsByDate.get(dateStr) ?? 0, // 0 points for rest/empty days
+    });
+  }
+
+  return result;
+};
+
+export const getDailyActivity = async (daysCount: number = 7): Promise<DailyActivity[]> => {
+  const sessions = await getWorkoutSessions();
+  return getDailyActivityFromSessions(sessions, daysCount);
+};
+
 export const defaultStats: UserStats = {
   healthpoints: 0,
   lifetimeHealthpoints: 0,

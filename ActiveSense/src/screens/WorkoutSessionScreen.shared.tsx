@@ -52,7 +52,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const spokenCueTimesRef = useRef<Record<string, number>>({});
   const poseCounterRef = useRef(createWorkoutPoseCounterState());
   const closingRef = useRef(false);
-
+  
   const currentEx = exercises[currentExercise];
   const targetReps = currentEx ? currentEx.sets * currentEx.reps : 1;
   const exerciseComplete = reps >= targetReps;
