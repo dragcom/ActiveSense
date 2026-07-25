@@ -77,7 +77,7 @@ create table public.achievements (
   title text not null,
   emoji text not null,
   description text not null,
-  requirement_type text not null check (requirement_type in ('healthpoints', 'streak_days', 'total_workouts')),
+  requirement_type text not null check (requirement_type in ('healthpoints', 'lifetime_healthpoints', 'streak_days', 'total_workouts')),
   requirement_value integer not null check (requirement_value >= 0),
   sort_order integer not null default 0
 );
@@ -153,6 +153,7 @@ create table public.user_profile_medical_conditions (
 create table public.user_stats (
   user_id uuid primary key references public.user_profiles(id) on delete cascade,
   healthpoints integer not null default 0 check (healthpoints >= 0),
+  lifetime_healthpoints integer not null default 0 check (lifetime_healthpoints >= 0),
   streak_days integer not null default 0 check (streak_days >= 0),
   total_workouts integer not null default 0 check (total_workouts >= 0),
   last_workout_date date,
@@ -207,8 +208,11 @@ create table public.voucher_redemptions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.user_profiles(id) on delete cascade,
   voucher_id bigint not null references public.reward_vouchers(id),
+  redemption_code text not null unique default ('AS-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))),
   points_spent integer not null check (points_spent > 0),
   redeemed_at timestamptz not null default now(),
+  used_at timestamptz,
+  used_by text,
   unique (user_id, voucher_id)
 );
 
@@ -222,6 +226,7 @@ create index user_profile_medical_conditions_option_idx on public.user_profile_m
 create unique index workout_sessions_user_client_session_unique on public.workout_sessions(user_id, client_session_id) where client_session_id is not null;
 create index workout_session_exercise_results_session_idx on public.workout_session_exercise_results(session_id);
 create index voucher_redemptions_user_redeemed_idx on public.voucher_redemptions(user_id, redeemed_at desc);
+create index voucher_redemptions_code_idx on public.voucher_redemptions(redemption_code);
 
 -- Keep updated_at columns reliable without trusting client clocks.
 create or replace function public.touch_updated_at()
@@ -345,6 +350,7 @@ create or replace function public.complete_workout(
 )
 returns table (
   healthpoints integer,
+  lifetime_healthpoints integer,
   streak_days integer,
   total_workouts integer
 )
@@ -357,6 +363,7 @@ declare
   v_session_key text := nullif(p_client_session_id, '');
   v_workout_exists boolean;
   v_workout_points integer;
+  v_today date := timezone('Asia/Singapore', now())::date;
 begin
   if v_user_id is null then
     raise exception 'Authentication required to complete a workout.';
@@ -406,8 +413,8 @@ begin
     from public.workout_sessions
     where user_id = v_user_id and client_session_id = v_session_key
   ) then
-    select user_stats.healthpoints, user_stats.streak_days, user_stats.total_workouts
-    into healthpoints, streak_days, total_workouts
+    select user_stats.healthpoints, user_stats.lifetime_healthpoints, user_stats.streak_days, user_stats.total_workouts
+    into healthpoints, lifetime_healthpoints, streak_days, total_workouts
     from public.user_stats
     where user_id = v_user_id;
 
@@ -435,16 +442,18 @@ begin
   update public.user_stats
   set
     healthpoints = user_stats.healthpoints + p_points_earned,
+    lifetime_healthpoints = user_stats.lifetime_healthpoints + p_points_earned,
     total_workouts = user_stats.total_workouts + 1,
     streak_days = case
-      when user_stats.last_workout_date = current_date then user_stats.streak_days
-      else user_stats.streak_days + 1
+      when user_stats.last_workout_date = v_today then user_stats.streak_days
+      when user_stats.last_workout_date = v_today - 1 then user_stats.streak_days + 1
+      else 1
     end,
-    last_workout_date = current_date,
+    last_workout_date = v_today,
     updated_at = now()
   where user_id = v_user_id
-  returning user_stats.healthpoints, user_stats.streak_days, user_stats.total_workouts
-  into healthpoints, streak_days, total_workouts;
+  returning user_stats.healthpoints, user_stats.lifetime_healthpoints, user_stats.streak_days, user_stats.total_workouts
+  into healthpoints, lifetime_healthpoints, streak_days, total_workouts;
 
   return next;
 end;
@@ -454,8 +463,10 @@ $$;
 create or replace function public.redeem_voucher(p_voucher_id bigint)
 returns table (
   healthpoints integer,
+  lifetime_healthpoints integer,
   streak_days integer,
-  total_workouts integer
+  total_workouts integer,
+  redemption_code text
 )
 language plpgsql
 security definer
@@ -464,6 +475,7 @@ as $$
 declare
   v_user_id uuid := auth.uid();
   v_points integer;
+  v_redemption_code text;
   v_current_stats public.user_stats%rowtype;
 begin
   if v_user_id is null then
@@ -502,15 +514,18 @@ begin
   end if;
 
   insert into public.voucher_redemptions (user_id, voucher_id, points_spent)
-  values (v_user_id, p_voucher_id, v_points);
+  values (v_user_id, p_voucher_id, v_points)
+  returning voucher_redemptions.redemption_code into v_redemption_code;
 
   update public.user_stats
   set
     healthpoints = user_stats.healthpoints - v_points,
     updated_at = now()
   where user_id = v_user_id
-  returning user_stats.healthpoints, user_stats.streak_days, user_stats.total_workouts
-  into healthpoints, streak_days, total_workouts;
+  returning user_stats.healthpoints, user_stats.lifetime_healthpoints, user_stats.streak_days, user_stats.total_workouts
+  into healthpoints, lifetime_healthpoints, streak_days, total_workouts;
+
+  redemption_code := v_redemption_code;
 
   return next;
 end;
@@ -521,3 +536,45 @@ revoke all on function public.redeem_voucher(bigint) from public;
 revoke all on function public.create_initial_user_stats() from public;
 grant execute on function public.complete_workout(bigint, integer, integer, text) to authenticated;
 grant execute on function public.redeem_voucher(bigint) to authenticated;
+
+-- mark_voucher_used lets a merchant/demo scanner invalidate one coupon code.
+create or replace function public.mark_voucher_used(
+  p_redemption_code text,
+  p_used_by text default null
+)
+returns table (
+  voucher_id bigint,
+  redemption_code text,
+  used_at timestamptz,
+  used_by text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if nullif(trim(p_redemption_code), '') is null then
+    raise exception 'Redemption code is required.';
+  end if;
+
+  update public.voucher_redemptions
+  set
+    used_at = coalesce(voucher_redemptions.used_at, now()),
+    used_by = coalesce(voucher_redemptions.used_by, nullif(trim(p_used_by), ''))
+  where voucher_redemptions.redemption_code = upper(trim(p_redemption_code))
+  returning voucher_redemptions.voucher_id,
+    voucher_redemptions.redemption_code,
+    voucher_redemptions.used_at,
+    voucher_redemptions.used_by
+  into voucher_id, redemption_code, used_at, used_by;
+
+  if redemption_code is null then
+    raise exception 'Redemption code not found.';
+  end if;
+
+  return next;
+end;
+$$;
+
+revoke all on function public.mark_voucher_used(text, text) from public;
+grant execute on function public.mark_voucher_used(text, text) to authenticated;

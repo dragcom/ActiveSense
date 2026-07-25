@@ -131,7 +131,7 @@ export default function WorkoutsScreen() {
   if (loading) {
     // Show a centered spinner while the catalog is being prepared.
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
         <View style={styles.loader}>
           <ActivityIndicator size="large" color={colors.primary.teal} />
         </View>
@@ -140,7 +140,7 @@ export default function WorkoutsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
       <View style={styles.header}>
         {/* Search narrows the visible workout cards by title. */}
         <Text style={styles.headerTitle}>Workouts</Text>
@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   scrollView: { flex: 1 },
-  scrollContent: { padding: 20, paddingBottom: 100, gap: 16 },
+  scrollContent: { padding: 20, paddingBottom: 32, gap: 16 },
   workoutCard: {
     backgroundColor: colors.background.card,
     borderRadius: 24,

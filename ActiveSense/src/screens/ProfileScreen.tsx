@@ -11,7 +11,7 @@ import { db } from '../services/database';
 import { clearUserProfile, getUserProfile } from '../services/storage';
 import { defaultAvatarConfig, normalizeAvatarConfig } from '../data/avatars';
 import { RootStackParamList } from '../navigation/types';
-import { ProfileMenuItem, UserProfile } from '../types';
+import { UserProfile } from '../types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -42,28 +42,25 @@ const getMobilityLevel = (conditions?: string[]) => {
   return 'Monitored';
 };
 
-// ProfileScreen shows saved user preferences and settings-style actions.
+// ProfileScreen shows saved user preferences and the real account actions still supported by the app.
 export default function ProfileScreen() {
   const navigation = useNavigation<NavigationProp>();
   const isFocused = useIsFocused();
-  // Profile, goals, and menu rows are refreshed when the tab is focused.
+  // Profile and goals are refreshed when the tab is focused.
   const [user, setUser] = useState<UserProfile | null>(null);
   const [profileGoals, setProfileGoals] = useState<string[]>([]);
-  const [menuItems, setMenuItems] = useState<ProfileMenuItem[]>([]);
   const avatar = normalizeAvatarConfig(user?.avatar ?? defaultAvatarConfig);
 
   useEffect(() => {
-    // Load local profile details plus data-driven rows for goals and menu actions.
+    // Load local profile details plus data-driven rows for goals.
     const loadProfile = async () => {
       try {
-        const [profile, goals, menu] = await Promise.all([
+        const [profile, goals] = await Promise.all([
           getUserProfile(),
           db.getProfileGoals(),
-          db.getProfileMenuItems(),
         ]);
         setUser(profile);
         setProfileGoals(goals);
-        setMenuItems(menu);
       } catch (error) {
         Alert.alert('Unable to load profile', 'Please try again later.');
       }
@@ -84,26 +81,9 @@ export default function ProfileScreen() {
     }
   };
 
-  const openInfoPage = async (actionKey: ProfileMenuItem['actionKey'] | 'profile_photo' | 'terms' | 'contact') => {
-    // Each menu item either logs out or opens a short explanation page.
-    if (!actionKey) {
-      return;
-    }
-    if (actionKey === 'logout') {
-      handleLogout();
-      return;
-    }
-    try {
-      const page = await db.getInfoPage(actionKey);
-      navigation.navigate('InfoPage', page);
-    } catch (error) {
-      Alert.alert('Unable to load page', 'Please try again later.');
-    }
-  };
-
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
         {/* Header gives the user's identity and quick edit access. */}
         <LinearGradient colors={colors.gradient.primary} style={styles.header}>
           <View style={styles.profileSection}>
@@ -198,42 +178,14 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* Menu items are data-backed so future settings can be added in one place. */}
-          <View style={styles.menuCard}>
-            {menuItems.map((item, index) => (
-              <TouchableOpacity
-                key={item.label}
-                accessibilityRole="button"
-                style={[styles.menuItem, index < menuItems.length - 1 && styles.menuItemBorder]}
-                onPress={() => openInfoPage(item.actionKey)}
-              >
-                <View
-                  style={[
-                    styles.menuIconContainer,
-                    item.color === '#EF4444' && { backgroundColor: '#FEE2E2' },
-                  ]}
-                >
-                  <Feather name={item.icon as keyof typeof Feather.glyphMap} size={20} color={item.color} />
-                </View>
-                <Text
-                  style={[
-                    styles.menuLabel,
-                    item.color === '#EF4444' && { color: '#EF4444' },
-                  ]}
-                >
-                  {item.label}
-                </Text>
-                {item.badge && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>{item.badge}</Text>
-                  </View>
-                )}
-                <Feather name="chevron-right" size={20} color={colors.text.tertiary} />
-              </TouchableOpacity>
-            ))}
-          </View>
+          <TouchableOpacity accessibilityRole="button" style={styles.logoutButton} onPress={handleLogout}>
+            <View style={styles.logoutIcon}>
+              <Feather name="log-out" size={20} color="#EF4444" />
+            </View>
+            <Text style={styles.logoutText}>Log Out</Text>
+          </TouchableOpacity>
 
-          {/* App information and legal links are grouped at the bottom of the profile. */}
+          {/* App information stays visible without linking to unfinished placeholder pages. */}
           <View style={styles.appInfo}>
             <View style={{ alignItems: 'center', marginBottom: 12 }}>
               <IconBadge icon="activity" size={32} color={colors.primary.teal} style={{ marginBottom: 8 }} />
@@ -251,25 +203,6 @@ export default function ProfileScreen() {
             <Text style={{ fontSize: 10, color: colors.text.secondary, textAlign: 'center' }}>
               Empowering healthy lifestyles through AI-powered guidance and gamification
             </Text>
-            <View style={styles.links}>
-              <TouchableOpacity
-                onPress={() => openInfoPage('terms')}
-              >
-                <Text style={styles.linkText}>Terms</Text>
-              </TouchableOpacity>
-              <Text style={{ color: colors.text.tertiary }}>•</Text>
-              <TouchableOpacity
-                onPress={() => openInfoPage('privacy')}
-              >
-                <Text style={styles.linkText}>Privacy</Text>
-              </TouchableOpacity>
-              <Text style={{ color: colors.text.tertiary }}>•</Text>
-              <TouchableOpacity
-                onPress={() => openInfoPage('contact')}
-              >
-                <Text style={styles.linkText}>Contact</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
       </ScrollView>
@@ -352,27 +285,26 @@ const styles = StyleSheet.create({
   goalsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   goalChip: { backgroundColor: '#DCFCE7', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 9999 },
   goalText: { fontSize: 12, fontWeight: '600', color: colors.primary.teal },
-  menuCard: {
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     backgroundColor: colors.background.card,
     borderRadius: 16,
-    overflow: 'hidden',
+    padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: colors.background.muted,
+    borderColor: '#FEE2E2',
   },
-  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
-  menuItemBorder: { borderBottomWidth: 1, borderBottomColor: colors.background.muted },
-  menuIconContainer: {
+  logoutIcon: {
     width: 40,
     height: 40,
-    backgroundColor: '#DCFCE7',
+    backgroundColor: '#FEE2E2',
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  menuLabel: { flex: 1, fontSize: 14, fontWeight: '600', color: colors.text.primary },
-  badge: { backgroundColor: '#EF4444', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 9999, marginRight: 8 },
-  badgeText: { fontSize: 10, fontWeight: '600', color: '#fff' },
+  logoutText: { flex: 1, fontSize: 14, fontWeight: '700', color: '#EF4444' },
   appInfo: {
     backgroundColor: '#DCFCE7',
     borderRadius: 16,
@@ -381,6 +313,4 @@ const styles = StyleSheet.create({
     borderColor: '#DCFCE7',
   },
   divider: { height: 1, backgroundColor: colors.primary.teal, opacity: 0.2, marginVertical: 12 },
-  links: { flexDirection: 'row', gap: 8, justifyContent: 'center', marginTop: 16 },
-  linkText: { fontSize: 10, color: colors.text.secondary },
 });
