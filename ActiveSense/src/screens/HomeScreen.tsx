@@ -214,31 +214,16 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Quick actions jump to the app's most common flows. */}
+        {/* Keep shortcuts to flows that are fully implemented. */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Quick actions</Text>
         </View>
         <View style={styles.actionsRow}>
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => navigation.navigate('WorkoutSession')}
-          >
-            <LinearGradient colors={colors.gradient.success} style={styles.actionIcon}>
-              <Feather name="activity" size={18} color="#fff" />
-            </LinearGradient>
-            <Text style={styles.actionText}>Quick workout</Text>
-          </TouchableOpacity>
           <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Progress')}>
             <LinearGradient colors={colors.gradient.warning} style={styles.actionIcon}>
               <Feather name="gift" size={18} color="#fff" />
             </LinearGradient>
             <Text style={styles.actionText}>Redeem rewards</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Profile')}>
-            <LinearGradient colors={['#60A5FA', '#38BDF8']} style={styles.actionIcon}>
-              <Feather name="shield" size={18} color="#fff" />
-            </LinearGradient>
-            <Text style={styles.actionText}>Privacy mode</Text>
           </TouchableOpacity>
         </View>
 
@@ -384,8 +369,8 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   actionsRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 20 },
   actionCard: {
-    flex: 1,
     backgroundColor: colors.background.card,
+    minWidth: 148,
     padding: 14,
     borderRadius: 16,
     borderWidth: 1,
