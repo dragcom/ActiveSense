@@ -6,7 +6,6 @@ import { useConfiguratorStore, pb } from "../store";
 import { Asset } from "./Asset";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 
-// Keep avatar root anchored at ground level (Y = 0)
 const LIVE_AVATAR_BASE_Y = 0;
 const POSE_TIMEOUT_MS = 300;
 
@@ -47,13 +46,11 @@ const _qTemp3 = new THREE.Quaternion();
 const _parentQuat = new THREE.Quaternion();
 
 const BEND_AXIS_X = new THREE.Vector3(1, 0, 0);
-const BEND_AXIS_Z = new THREE.Vector3(0, 0, 1);
 const SQUAT_ACTIVE_THRESHOLD = 0.10;
 const MAX_SQUAT_THIGH_PITCH_DEG = 22;
 const MAX_SQUAT_KNEE_BEND_DEG = 72;
 const KNEE_STRAIGHT_ANGLE_DEG = 168;
 const KNEE_BEND_DEADZONE_DEG = 10;
-const MIN_TRACKED_KNEE_BEND_DEG = 8;
 
 const getRestDirection = (bone) => {
   if (!bone) return new THREE.Vector3(0, -1, 0);
@@ -397,22 +394,48 @@ export const Avatar = ({ ...props }) => {
     applyBoneDirection(bone, clampDirectionFromRest(bone, _vOrientDir, maxAngle), speed);
   };
 
-  // Keep the visible soles planted by restoring the rig's calibrated flat-foot pose.
-  // The thigh and shin carry the squat; the feet should not inherit their upward pitch.
-  const keepFootPlanted = (bone, speed = 0.22) => {
+  // Modern Foot Grounding Solver (Supports Calf Raises / Toe Extensions)
+  const handleFootOrientation = (isLeft, speed = 0.22) => {
+    const j = latestJoints.current;
+    const bone = isLeft ? bonesRef.current.leftFoot : bonesRef.current.rightFoot;
     if (!bone?.userData.baseWorldQuaternion) return;
 
-    if (bone.parent) {
-      bone.parent.updateMatrixWorld(true);
-      bone.parent.getWorldQuaternion(_parentQuat).invert();
-      _qTemp1.copy(_parentQuat).multiply(bone.userData.baseWorldQuaternion);
-      bone.quaternion.slerp(_qTemp1, speed);
-      return;
+    const heelId = isLeft ? MP.L_HEEL : MP.R_HEEL;
+    const toeId = isLeft ? MP.L_FOOT_INDEX : MP.R_FOOT_INDEX;
+
+    let isCalfRaise = false;
+    let heelLiftAngle = 0;
+
+    if (j?.[heelId] && j?.[toeId] && isVisible(heelId) && isVisible(toeId)) {
+      const heelY = getScreenY(j[heelId]);
+      const toeY = getScreenY(j[toeId]);
+      if (heelY !== null && toeY !== null) {
+        // In screen coords, smaller Y is higher up
+        const heelElevation = toeY - heelY;
+        if (heelElevation > 0.035) { // Heel noticeably above toe
+          isCalfRaise = true;
+          heelLiftAngle = THREE.MathUtils.clamp((heelElevation - 0.035) * 8.0, 0, Math.PI / 4);
+        }
+      }
     }
 
-    bone.quaternion.slerp(bone.userData.baseWorldQuaternion, speed);
+    if (isCalfRaise) {
+      // Pitch foot forward to represent standing on tiptoes
+      applySquatBend(bone, BEND_AXIS_X, heelLiftAngle, speed);
+    } else {
+      // Standard Flat-Foot Grounding
+      if (bone.parent) {
+        bone.parent.updateMatrixWorld(true);
+        bone.parent.getWorldQuaternion(_parentQuat).invert();
+        _qTemp1.copy(_parentQuat).multiply(bone.userData.baseWorldQuaternion);
+        bone.quaternion.slerp(_qTemp1, speed);
+      } else {
+        bone.quaternion.slerp(bone.userData.baseWorldQuaternion, speed);
+      }
+    }
   };
 
+  // Full 3D Leg Dynamics Solver (Supports Squats, Side Leg Raises, and Marching)
   const updateLeg = (isLeft) => {
     const j = latestJoints.current;
     const bones = bonesRef.current;
@@ -439,7 +462,26 @@ export const Avatar = ({ ...props }) => {
       : 180;
     const targetKneeAngle = rawKneeAngle > KNEE_STRAIGHT_ANGLE_DEG ? 180 : rawKneeAngle;
     const trackedBendDeg = Math.max(0, 180 - targetKneeAngle - KNEE_BEND_DEADZONE_DEG);
-    const shouldPoseLeg = activeSquatAmount > 0 || trackedBendDeg > MIN_TRACKED_KNEE_BEND_DEG;
+
+    // Check for Marching or Side Leg Raises (3D hip displacement)
+    let isPerformingLegMovement = false;
+    if (hasJointData) {
+      const hip = j[hipId];
+      const knee = j[kneeId];
+      const dx = knee.x - hip.x;
+      const dy = -(knee.y - hip.y);
+      const dz = -((getZ(knee)) - (getZ(hip)));
+
+      // Detect lateral abduction (Side Leg Raise) or forward hip flexion (Marching)
+      const isSideRaise = Math.abs(dx) > 0.18;
+      const isMarching = dy > -0.75; // Knee lifted towards horizontal
+
+      if (isSideRaise || isMarching) {
+        isPerformingLegMovement = true;
+      }
+    }
+
+    const shouldPoseLeg = activeSquatAmount > 0 || trackedBendDeg > 4 || isPerformingLegMovement;
 
     if (!shouldPoseLeg) {
       kneeAngleRef.current = THREE.MathUtils.lerp(kneeAngleRef.current, 180, 0.14);
@@ -448,19 +490,21 @@ export const Avatar = ({ ...props }) => {
       return;
     }
 
-    // 1. Orient Thigh (UpLeg) using tracked direction plus squat-depth pitch.
+    // 1. Orient Thigh (UpLeg) with 3D direction vector
     if (hasJointData) {
       const hip = j[hipId];
       const knee = j[kneeId];
       const dx = knee.x - hip.x;
       const dy = -(knee.y - hip.y);
-      // Reduce Z noise distortion on thigh pitch
-      const dz = -((getZ(knee)) - (getZ(hip))) * 0.4;
+      const dz = -((getZ(knee)) - (getZ(hip))) * 0.6;
 
       _vLegDir.set(dx, dy, dz);
-      const clampedThigh = clampDirectionFromRest(upLegBone, _vLegDir, THREE.MathUtils.degToRad(110));
+      
+      // Allow up to 120° motion for side leg raises & high knee marching
+      const clampedThigh = clampDirectionFromRest(upLegBone, _vLegDir, THREE.MathUtils.degToRad(120));
       const squatThighPitch = activeSquatAmount * THREE.MathUtils.degToRad(MAX_SQUAT_THIGH_PITCH_DEG);
-      applyBoneDirectionWithLocalBend(upLegBone, clampedThigh, BEND_AXIS_X, squatThighPitch, 0.16);
+      
+      applyBoneDirectionWithLocalBend(upLegBone, clampedThigh, BEND_AXIS_X, squatThighPitch, 0.18);
     } else if (activeSquatAmount > 0) {
       const squatThighPitch = activeSquatAmount * THREE.MathUtils.degToRad(MAX_SQUAT_THIGH_PITCH_DEG);
       applySquatBend(upLegBone, BEND_AXIS_X, squatThighPitch, 0.18);
@@ -548,17 +592,12 @@ export const Avatar = ({ ...props }) => {
       }
 
       // Foot-to-Floor Grounding Solver
-      // Keep root Y mostly stable during squats; otherwise this feedback loop
-      // chases foot height changes and makes the whole avatar bob.
       const isSquatting = squatAmountRef.current > SQUAT_ACTIVE_THRESHOLD;
       if (isLiveMode && bones.leftFoot && bones.rightFoot && !isSquatting) {
         bones.leftFoot.getWorldPosition(_vTemp);
         bones.rightFoot.getWorldPosition(_vTemp2);
 
-        // Find world Y height of the lower foot
         const lowestFootY = Math.min(_vTemp.y, _vTemp2.y);
-
-        // Calculate offset required to anchor foot precisely at ground (Y = 0)
         const targetYOffset = LIVE_AVATAR_BASE_Y - lowestFootY;
 
         liveGroupPosition.current.y = THREE.MathUtils.lerp(
@@ -590,7 +629,7 @@ export const Avatar = ({ ...props }) => {
         return;
       }
 
-      // Smooth Hip Calibration & Controlled Vertical Descent
+      // Smooth Hip Calibration & Squat/Chair Descent Solver
       const isSeated = isSeatedRef.current;
       if (
         latestJoints.current[MP.L_HIP] &&
@@ -644,7 +683,7 @@ export const Avatar = ({ ...props }) => {
         squatAmountRef.current = THREE.MathUtils.lerp(squatAmountRef.current, 0, 0.12);
       }
 
-      // Spine & Torso Rotation
+      // Enhanced Spine (Supports Torso Twists and Side Bends)
       if (
         bones.spine &&
         latestJoints.current[MP.L_SHOULDER] &&
@@ -664,16 +703,18 @@ export const Avatar = ({ ...props }) => {
         const sz_lH = getZ(lHip);
         const sz_rH = getZ(rHip);
 
+        // Spine Pitch (forward/back) and Roll (side bends)
         _vSpineDir.set(
-          (lShoulder.x + rShoulder.x - lHip.x - rHip.x) * 0.06,
+          (lShoulder.x + rShoulder.x - lHip.x - rHip.x) * 0.12, // Increased factor for lateral side bends
           0.9 + (-(lShoulder.y + rShoulder.y - lHip.y - rHip.y) * 0.015),
           (-(sz_lS + sz_rS - sz_lH - sz_rH)) * 0.06
         );
 
         if (_vSpineDir.lengthSq() > 0.00001) {
-          applyBoneDirection(bones.spine, _vSpineDir, 0.05);
+          applyBoneDirection(bones.spine, _vSpineDir, 0.08);
         }
 
+        // Torso Twist / Yaw calculation
         if (torsoVisible && group.current) {
           const bodyDx = (lShoulder.x - rShoulder.x + lHip.x - rHip.x) * 0.5;
           const bodyDz = (-(sz_lS - sz_rS) * 3.0 + -(sz_lH - sz_rH) * 3.0) * 0.5;
@@ -690,7 +731,7 @@ export const Avatar = ({ ...props }) => {
           }
 
           const DEADZONE = THREE.MathUtils.degToRad(2.0);
-          const MAX_YAW = THREE.MathUtils.degToRad(75);
+          const MAX_YAW = THREE.MathUtils.degToRad(85); // Expanded for torso twists
           let desiredYaw = Math.abs(rawYaw) > DEADZONE ? rawYaw : 0;
           desiredYaw = THREE.MathUtils.clamp(desiredYaw, -MAX_YAW, MAX_YAW);
 
@@ -727,7 +768,7 @@ export const Avatar = ({ ...props }) => {
         resetBoneToRest(bones.head);
       }
 
-      // Upper Body Arms
+      // Upper Body Arms (Overhead Reaches & Wall Push-ups / Forward Extensions)
       const lShoulder = latestJoints.current[MP.L_SHOULDER];
       const rShoulder = latestJoints.current[MP.R_SHOULDER];
       if (lShoulder && rShoulder && bones.leftShoulder && bones.rightShoulder) {
@@ -735,25 +776,26 @@ export const Avatar = ({ ...props }) => {
         const rY = getScreenY(rShoulder);
         if (lY !== null && rY !== null) {
           const tiltAmount = THREE.MathUtils.clamp((lY - rY) * 1.8, -0.35, 0.35);
-          applySquatBend(bones.leftShoulder, BEND_AXIS_Z, -tiltAmount, 0.12);
-          applySquatBend(bones.rightShoulder, BEND_AXIS_Z, -tiltAmount, 0.12);
+          applySquatBend(bones.leftShoulder, BEND_AXIS_X, -tiltAmount, 0.12);
+          applySquatBend(bones.rightShoulder, BEND_AXIS_X, -tiltAmount, 0.12);
 
           if (bones.spine) {
-            applySquatBend(bones.spine, BEND_AXIS_Z, -tiltAmount * 0.5, 0.12);
+            applySquatBend(bones.spine, BEND_AXIS_X, -tiltAmount * 0.5, 0.12);
           }
         }
       }
 
-      orientBoneSafe(bones.leftArm, MP.L_SHOULDER, MP.L_ELBOW, 0.14, THREE.MathUtils.degToRad(175));
-      orientBoneSafe(bones.leftForeArm, MP.L_ELBOW, MP.L_WRIST, 0.16, THREE.MathUtils.degToRad(145));
+      // Unclamped 180° range to allow full Overhead Reaches and forward Wall Push-ups
+      orientBoneSafe(bones.leftArm, MP.L_SHOULDER, MP.L_ELBOW, 0.16, Math.PI);
+      orientBoneSafe(bones.leftForeArm, MP.L_ELBOW, MP.L_WRIST, 0.18, Math.PI);
 
-      orientBoneSafe(bones.rightArm, MP.R_SHOULDER, MP.R_ELBOW, 0.14, THREE.MathUtils.degToRad(175));
-      orientBoneSafe(bones.rightForeArm, MP.R_ELBOW, MP.R_WRIST, 0.16, THREE.MathUtils.degToRad(145));
+      orientBoneSafe(bones.rightArm, MP.R_SHOULDER, MP.R_ELBOW, 0.16, Math.PI);
+      orientBoneSafe(bones.rightForeArm, MP.R_ELBOW, MP.R_WRIST, 0.18, Math.PI);
 
       resetBoneToRest(bones.leftHand);
       resetBoneToRest(bones.rightHand);
 
-      // Leg Tracking Solver
+      // Leg Tracking Solver (Squats, Side Leg Raises, Marching)
       if (isLiveMode) {
         updateLeg(true);  // Left leg
         updateLeg(false); // Right leg
@@ -764,9 +806,9 @@ export const Avatar = ({ ...props }) => {
         resetBoneToRest(bones.rightLeg);
       }
 
-      // Feet Alignment (Locks soles flat to horizontal floor plane)
-      keepFootPlanted(bones.leftFoot, 0.55);
-      keepFootPlanted(bones.rightFoot, 0.55);
+      // Feet Alignment & Calf Raise Solver
+      handleFootOrientation(true, 0.55);  // Left foot
+      handleFootOrientation(false, 0.55); // Right foot
 
       // Group Yaw Sync
       if (isLiveMode && group.current) {
