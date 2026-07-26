@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Speech from 'expo-speech';
-import { addWorkoutResult } from '../services/storage';
+import { addWorkoutResult, getUserProfile } from '../services/storage';
 import PoseCameraPreview from '../components/PoseCameraPreview';
 import WorkoutAvatarWebView, { WorkoutAvatarWebViewHandle } from '../components/WorkoutAvatarWebView';
 import { db } from '../services/database';
@@ -24,10 +24,8 @@ import {
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkoutSession'>;
 
-// WorkoutSessionScreen runs the shared camera-first exercise tracker and rep counter.
 export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
-  // Exercise progress and pose status stay local to this full-screen session.
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [loadingExercises, setLoadingExercises] = useState(true);
   const [currentExercise, setCurrentExercise] = useState(0);
@@ -40,8 +38,11 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const [postureFeedback, setPostureFeedback] = useState<string | null>(null);
   const [isSavingResult, setIsSavingResult] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  const [showCameraPreview, setShowCameraPreview] = useState(false);
+
+  // Camera preview defaults to true unless profile specifies Avatar mode
+  const [showCameraPreview, setShowCameraPreview] = useState(true);
   const [hasAvatarFailed, setHasAvatarFailed] = useState(false);
+
   const avatarWebViewRef = useRef<WorkoutAvatarWebViewHandle>(null);
   const poseClassifierRef = useRef<ReturnType<typeof createPoseClassifier> | null>(null);
   const poseCountRef = useRef(0);
@@ -52,7 +53,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const spokenCueTimesRef = useRef<Record<string, number>>({});
   const poseCounterRef = useRef(createWorkoutPoseCounterState());
   const closingRef = useRef(false);
-  
+
   const currentEx = exercises[currentExercise];
   const targetReps = currentEx ? currentEx.sets * currentEx.reps : 1;
   const exerciseComplete = reps >= targetReps;
@@ -118,14 +119,20 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     let mounted = true;
-    // Load the selected workout's exercises and train the pose classifier once.
-    const loadExercises = async () => {
+
+    const loadSessionData = async () => {
       try {
-        const [workoutExercises, poseTrainingSamples] = await Promise.all([
+        const [profile, workoutExercises, poseTrainingSamples] = await Promise.all([
+          getUserProfile(),
           db.getWorkoutExercises(route.params?.workoutId),
           db.getPoseTrainingSamples(),
         ]);
+
         if (mounted) {
+          // Set preview mode based on user profile settings
+          const isAvatarMode = profile?.privacyMode === 'Avatar';
+          setShowCameraPreview(!isAvatarMode);
+
           poseClassifierRef.current = createPoseClassifier(poseTrainingSamples);
           setExercises(workoutExercises);
           setLoadingExercises(false);
@@ -138,7 +145,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
       }
     };
 
-    loadExercises();
+    loadSessionData();
 
     return () => {
       mounted = false;
@@ -161,7 +168,6 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
     if (closingRef.current) {
       return;
     }
-    // This callback receives 33-point pose frames from the shared WebView camera.
     if (poseCountRef.current !== landmarks.length) {
       poseCountRef.current = landmarks.length;
       setPosePointCount(landmarks.length);
@@ -169,7 +175,6 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
     sendPoseFrameToAvatar(landmarks);
     const now = Date.now();
     if (now - lastPredictionAtRef.current < 300) {
-      // Classify only a few times per second to keep the UI responsive.
       return;
     }
     lastPredictionAtRef.current = now;
@@ -221,7 +226,6 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   }, [currentEx, isClosing, isPaused, sendPoseFrameToAvatar, speakWorkoutCue, targetReps]);
 
   useEffect(() => {
-    // New exercises start ready to count the next valid rep.
     startTimeRef.current = Date.now();
     resetWorkoutPoseCounter(poseCounterRef.current);
     setPostureFeedback(null);
@@ -260,7 +264,6 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   const handleAvatarFailure = useCallback(() => setHasAvatarFailed(true), []);
 
   const handleManualRep = () => {
-    // Simulator and unsupported native builds can still walk through the workout flow.
     if (isPaused) {
       return;
     }
@@ -285,7 +288,6 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   };
 
   const handleNext = async () => {
-    // Advance between exercises or save the final workout result.
     if (!currentEx || isSavingResult) {
       return;
     }
@@ -315,7 +317,6 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
     try {
       speakWorkoutCue('Workout complete. Saving your progress.', 900, true);
       setIsSavingResult(true);
-      // Quick Start resolves its workout through the exercise list, so persist that ID too.
       await addWorkoutResult(earned, route.params?.workoutId ?? currentEx.workoutId, posePointCount);
       navigation.goBack();
     } catch (error) {
@@ -325,7 +326,6 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   };
 
   if (loadingExercises) {
-    // The camera view waits until exercise metadata and pose samples are ready.
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary.tealLight} />
@@ -334,7 +334,6 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
   }
 
   if (!currentEx) {
-    // Empty workouts should explain the setup issue instead of leaving the user on a spinner.
     return (
       <View style={styles.emptyContainer}>
         <Feather name="database" size={28} color={colors.primary.tealLight} />
@@ -356,7 +355,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
 
   return (
     <View style={styles.container}>
-      {/* The camera preview is the full-screen underlay behind all workout controls. */}
+      {/* View switching based on showCameraPreview */}
       <View style={styles.cameraUnderlay}>
         {!isClosing && (
           <>
@@ -392,7 +391,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
         pointerEvents="none"
       />
 
-      {/* Top overlay shows the current exercise and live feedback prompt. */}
+      {/* Top Overlay */}
       <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
         <View style={styles.topBar}>
           <TouchableOpacity disabled={isClosing} onPress={handleClose} style={styles.iconButton}>
@@ -421,7 +420,7 @@ export default function WorkoutSessionScreen({ navigation, route }: Props) {
         </View>
       </View>
 
-      {/* Bottom panel shows rep progress, controls, and next-step action. */}
+      {/* Bottom Controls */}
       <View style={[styles.bottomPanel, { paddingBottom: insets.bottom + 12 }]}>
         <View style={styles.repCard}>
           <View style={styles.repHeaderRow}>
@@ -511,7 +510,8 @@ const styles = StyleSheet.create({
   },
   avatarWebView: { 
     flex: 1, 
-    backgroundColor: 'transparent'},
+    backgroundColor: 'transparent',
+  },
   cameraPreview: { flex: 1, width: '100%', height: '100%' },
   hiddenPreview: { opacity: 0, pointerEvents: 'none' },
   topShade: { position: 'absolute', left: 0, right: 0, top: 0, height: 260 },

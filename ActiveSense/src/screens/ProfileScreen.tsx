@@ -42,17 +42,16 @@ const getMobilityLevel = (conditions?: string[]) => {
   return 'Monitored';
 };
 
-// ProfileScreen shows saved user preferences and the real account actions still supported by the app.
 export default function ProfileScreen() {
   const navigation = useNavigation<NavigationProp>();
   const isFocused = useIsFocused();
-  // Profile and goals are refreshed when the tab is focused.
+
   const [user, setUser] = useState<UserProfile | null>(null);
   const [profileGoals, setProfileGoals] = useState<string[]>([]);
+
   const avatar = normalizeAvatarConfig(user?.avatar ?? defaultAvatarConfig);
 
   useEffect(() => {
-    // Load local profile details plus data-driven rows for goals.
     const loadProfile = async () => {
       try {
         const [profile, goals] = await Promise.all([
@@ -72,7 +71,6 @@ export default function ProfileScreen() {
   }, [isFocused]);
 
   const handleLogout = async () => {
-    // Prototype logout clears the onboarding flag and returns to the landing page.
     try {
       await clearUserProfile();
       navigation.reset({ index: 0, routes: [{ name: 'AuthLanding' }] });
@@ -84,7 +82,7 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
-        {/* Header gives the user's identity and quick edit access. */}
+        {/* Header */}
         <LinearGradient colors={colors.gradient.primary} style={styles.header}>
           <View style={styles.profileSection}>
             <View style={styles.avatarContainer}>
@@ -134,7 +132,7 @@ export default function ProfileScreen() {
         </LinearGradient>
 
         <View style={{ padding: 16 }}>
-          {/* Health profile summarizes the onboarding answers used for workout safety. */}
+          {/* Health Profile */}
           <View style={styles.healthCard}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>Health Profile</Text>
@@ -166,7 +164,7 @@ export default function ProfileScreen() {
             </LinearGradient>
           </View>
 
-          {/* Goals are simple chips for the user's broad fitness motivation. */}
+          {/* Your Goals */}
           <View style={styles.goalsCard}>
             <Text style={styles.cardTitle}>Your Goals</Text>
             <View style={styles.goalsContainer}>
@@ -178,6 +176,59 @@ export default function ProfileScreen() {
             </View>
           </View>
 
+          {/* Menu Options Card (Connected Navigation) */}
+          <View style={styles.menuCard}>
+            {/* Account Settings */}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('AccountSettings')}
+            >
+              <View style={styles.menuLeft}>
+                <View style={styles.menuIconContainer}>
+                  <Feather name="settings" size={18} color={colors.primary.teal} />
+                </View>
+                <Text style={styles.menuText}>Account Settings</Text>
+              </View>
+              <Feather name="chevron-right" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            {/* Notifications */}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('Notifications')}
+            >
+              <View style={styles.menuLeft}>
+                <View style={styles.menuIconContainer}>
+                  <Feather name="bell" size={18} color={colors.primary.teal} />
+                </View>
+                <Text style={styles.menuText}>Notifications</Text>
+              </View>
+              <Feather name="chevron-right" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            {/* Help & Support */}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('HelpSupport')}
+            >
+              <View style={styles.menuLeft}>
+                <View style={styles.menuIconContainer}>
+                  <Feather name="help-circle" size={18} color={colors.primary.teal} />
+                </View>
+                <Text style={styles.menuText}>Help & Support</Text>
+              </View>
+              <Feather name="chevron-right" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Log Out */}
           <TouchableOpacity accessibilityRole="button" style={styles.logoutButton} onPress={handleLogout}>
             <View style={styles.logoutIcon}>
               <Feather name="log-out" size={20} color="#EF4444" />
@@ -185,7 +236,7 @@ export default function ProfileScreen() {
             <Text style={styles.logoutText}>Log Out</Text>
           </TouchableOpacity>
 
-          {/* App information stays visible without linking to unfinished placeholder pages. */}
+          {/* App Info */}
           <View style={styles.appInfo}>
             <View style={{ alignItems: 'center', marginBottom: 12 }}>
               <IconBadge icon="activity" size={32} color={colors.primary.teal} style={{ marginBottom: 8 }} />
@@ -285,6 +336,72 @@ const styles = StyleSheet.create({
   goalsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   goalChip: { backgroundColor: '#DCFCE7', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 9999 },
   goalText: { fontSize: 12, fontWeight: '600', color: colors.primary.teal },
+
+  menuCard: {
+    backgroundColor: colors.background.card,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+  },
+  menuLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  menuIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  menuRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  notificationBadge: {
+    backgroundColor: '#EF4444',
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  notificationBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: '#F3F4F6',
+    width: '100%',
+  },
+
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',

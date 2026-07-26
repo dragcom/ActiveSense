@@ -2,14 +2,13 @@ import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 
-// Expo only exposes variables prefixed with EXPO_PUBLIC_ to mobile JavaScript.
+// Expo exposes variables prefixed with EXPO_PUBLIC_ to mobile JavaScript.
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-// This flag lets services fall back gracefully when the app is run before env setup.
+// Lets services fall back gracefully when run before environment variable setup.
 export const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey);
 
-// The mobile app must use the anon key; service-role or secret keys never belong here.
 export const supabase = hasSupabaseConfig
   ? createClient(supabaseUrl!, supabaseAnonKey!, {
       auth: {
@@ -21,23 +20,20 @@ export const supabase = hasSupabaseConfig
     })
   : null;
 
-// Centralized guard keeps missing Supabase setup errors consistent and easy to read.
+// Centralized guard keeps missing Supabase setup errors consistent and type-safe.
 export const requireSupabase = () => {
   if (!supabase) {
-    throw new Error('Supabase is not configured. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.');
+    throw new Error(
+      'Supabase is not configured. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.'
+    );
   }
   return supabase;
 };
 
-// Most user-owned mutations need an authenticated Supabase user for RLS to work.
 export const getCurrentSupabaseUserId = async () => {
-  if (!supabase) {
-    return null;
-  }
+  if (!supabase) return null;
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) {
-    return null;
-  }
+  if (error || !data.user) return null;
   return data.user.id;
 };
 
@@ -47,14 +43,10 @@ export const signUpWithPassword = async (email: string, password: string, displa
     email: email.trim().toLowerCase(),
     password,
     options: {
-      data: {
-        display_name: displayName.trim(),
-      },
+      data: { display_name: displayName.trim() },
     },
   });
-  if (error) {
-    throw error;
-  }
+  if (error) throw error;
   if (!data.session) {
     throw new Error('Please confirm your email address, then log in to finish creating your ActiveSense profile.');
   }
@@ -67,8 +59,16 @@ export const signInWithPassword = async (email: string, password: string) => {
     email: email.trim().toLowerCase(),
     password,
   });
-  if (error) {
-    throw error;
-  }
+  if (error) throw error;
+  return data;
+};
+
+// --- In-App Password Update Helper ---
+export const updateUserPassword = async (newPassword: string) => {
+  const client = requireSupabase();
+  const { data, error } = await client.auth.updateUser({
+    password: newPassword,
+  });
+  if (error) throw error;
   return data;
 };

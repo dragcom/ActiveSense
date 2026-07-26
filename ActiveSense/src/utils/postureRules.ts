@@ -144,14 +144,14 @@ const rulesMap: Record<string, (landmarks: Landmark[]) => PostureResult> = {
 
     // Warning is advisory only — doesn't block rep detection
     let warning: string | undefined;
-    if (torsoFromVertical > 50) warning = 'Keep chest open';
+    if (torsoFromVertical > 58) warning = 'Keep chest open';
 
-    // Relaxed bottom: 142 deg knee bend is enough for a rep (allows partial squats)
-    if (kneeAngle <= 142) {
+    // Shallow squat (<= 150 deg knee angle) triggers bottom rep
+    if (kneeAngle <= 150) {
       return createResult('bottom', 'Good depth! Push back up.', warning, 0.88);
     }
-    // Relaxed top: Stand up to 148+ deg (doesn't require 100% leg lock)
-    if (kneeAngle >= 148) {
+    // Returning upright (>= 156 deg) completes rep easily
+    if (kneeAngle >= 156) {
       return createResult('top', 'Ready for the next rep.', warning, 0.86);
     }
     return createResult('middle', 'Lower with control...', warning, 0.72);
@@ -169,12 +169,12 @@ const rulesMap: Record<string, (landmarks: Landmark[]) => PostureResult> = {
       [rightHip, rightKnee, rightAnkle],
     ]) ?? 180;
 
-    // Bottom (seated): Knee angle <= 130 deg
-    if (kneeAngle <= 130) {
+    // Bottom (seated): Knee angle <= 138 deg
+    if (kneeAngle <= 138) {
       return createResult('bottom', 'Seated position. Press through heels to stand.', undefined, 0.88);
     }
-    // Top (standing): Knee angle >= 145 deg
-    if (kneeAngle >= 145) {
+    // Top (standing): Knee angle >= 146 deg
+    if (kneeAngle >= 146) {
       return createResult('top', 'Standing tall. Lower back down safely.', undefined, 0.86);
     }
     return createResult('middle', 'Transitioning smoothly.', undefined, 0.72);
@@ -193,11 +193,11 @@ const rulesMap: Record<string, (landmarks: Landmark[]) => PostureResult> = {
     const rightHeelElevation = landmarks[rightFootIndex].y - landmarks[rightHeel].y;
     const maxHeelElevation = Math.max(leftHeelElevation, rightHeelElevation);
 
-    // Reduced elevation needed: 0.018 offset registers as toe press
-    if (maxHeelElevation > 0.018) {
+    // Subtle elevation (0.012 offset) registers as toe press
+    if (maxHeelElevation > 0.012) {
       return createResult('bottom', 'Nice lift! Lower slowly.', undefined, 0.86);
     }
-    if (maxHeelElevation <= 0.012) {
+    if (maxHeelElevation <= 0.008) {
       return createResult('top', 'Heels down. Rise onto toes.', undefined, 0.84);
     }
     return createResult('middle', 'Lifting up...', undefined, 0.72);
@@ -213,11 +213,11 @@ const rulesMap: Record<string, (landmarks: Landmark[]) => PostureResult> = {
     const shoulderWidth = Math.max(0.001, distance(landmarks[leftShoulder], landmarks[rightShoulder]));
     const ankleSpread = Math.abs(landmarks[leftAnkle].x - landmarks[rightAnkle].x) / shoulderWidth;
 
-    // Reduced spread ratio required from 1.1 to 0.98
-    if (ankleSpread > 0.98) {
+    // Slight leg abduction (> 0.85 spread ratio) triggers rep
+    if (ankleSpread > 0.85) {
       return createResult('bottom', 'Leg raised! Return to center.', undefined, 0.84);
     }
-    if (ankleSpread < 0.90) {
+    if (ankleSpread < 0.78) {
       return createResult('top', 'Feet together. Lift leg outward.', undefined, 0.84);
     }
     return createResult('middle', 'Lifting leg outward...', undefined, 0.72);
@@ -234,11 +234,11 @@ const rulesMap: Record<string, (landmarks: Landmark[]) => PostureResult> = {
     const leftKneeLift = (landmarks[leftHip].y - landmarks[leftKnee].y) / shoulderWidth;
     const rightKneeLift = (landmarks[rightHip].y - landmarks[rightKnee].y) / shoulderWidth;
 
-    // Moderate knee lift (-0.33 threshold) registers rep easily
-    if (Math.max(leftKneeLift, rightKneeLift) > -0.33) {
+    // Modest knee lift (-0.45 threshold) registers rep effortlessly
+    if (Math.max(leftKneeLift, rightKneeLift) > -0.45) {
       return createResult('bottom', 'Great knee lift! Switch legs.', undefined, 0.84);
     }
-    if (leftKneeLift < -0.38 && rightKneeLift < -0.38) {
+    if (leftKneeLift < -0.52 && rightKneeLift < -0.52) {
       return createResult('top', 'Feet down. March alternating knees.', undefined, 0.78);
     }
     return createResult('middle', 'Marching...', undefined, 0.7);
@@ -256,11 +256,11 @@ const rulesMap: Record<string, (landmarks: Landmark[]) => PostureResult> = {
     const apparentWidthRatio = shoulderWidth / hipWidth;
     const shoulderZDiff = Math.abs((landmarks[leftShoulder].z ?? 0) - (landmarks[rightShoulder].z ?? 0));
 
-    // Slight rotation (ratio < 0.80 or mild Z-depth offset) triggers peak twist
-    if (apparentWidthRatio < 0.80 || shoulderZDiff > 0.08) {
+    // Slight rotation (ratio < 0.88 or mild Z offset) triggers peak twist
+    if (apparentWidthRatio < 0.88 || shoulderZDiff > 0.04) {
       return createResult('bottom', 'Twist complete! Rotate back to center.', undefined, 0.85);
     }
-    if (apparentWidthRatio >= 0.88) {
+    if (apparentWidthRatio >= 0.93) {
       return createResult('top', 'Facing forward. Begin twist.', undefined, 0.82);
     }
     return createResult('middle', 'Twisting through core...', undefined, 0.72);
@@ -276,11 +276,11 @@ const rulesMap: Record<string, (landmarks: Landmark[]) => PostureResult> = {
     const shoulderWidth = Math.max(0.001, distance(landmarks[leftShoulder], landmarks[rightShoulder]));
     const shoulderTilt = Math.abs(landmarks[leftShoulder].y - landmarks[rightShoulder].y) / shoulderWidth;
 
-    // Gentle side tilt (> 0.14) registers the bend
-    if (shoulderTilt > 0.14) {
+    // Gentle side tilt (> 0.09) registers the bend
+    if (shoulderTilt > 0.09) {
       return createResult('bottom', 'Side bend reached! Return upright.', undefined, 0.85);
     }
-    if (shoulderTilt < 0.08) {
+    if (shoulderTilt < 0.05) {
       return createResult('top', 'Standing upright. Bend to side.', undefined, 0.83);
     }
     return createResult('middle', 'Bending to side...', undefined, 0.72);
@@ -299,11 +299,11 @@ const rulesMap: Record<string, (landmarks: Landmark[]) => PostureResult> = {
     const rightReach = (landmarks[rightShoulder].y - landmarks[rightWrist].y) / shoulderWidth;
     const maxReach = Math.max(leftReach, rightReach);
 
-    // Hands slightly above shoulders (> 0.18) triggers top reach
-    if (maxReach > 0.18) {
+    // Hands slightly above shoulder height (> 0.10) triggers top reach
+    if (maxReach > 0.10) {
       return createResult('bottom', 'Arms reached overhead! Lower down.', undefined, 0.88);
     }
-    if (maxReach < 0.08) {
+    if (maxReach < 0.05) {
       return createResult('top', 'Hands down. Reach toward ceiling.', undefined, 0.84);
     }
     return createResult('middle', 'Reaching upward...', undefined, 0.72);
@@ -322,7 +322,7 @@ const rulesMap: Record<string, (landmarks: Landmark[]) => PostureResult> = {
     const leftKneeAngle = calculateAngle(landmarks[leftHip], landmarks[leftKnee], landmarks[leftAnkle]);
     const rightKneeAngle = calculateAngle(landmarks[rightHip], landmarks[rightKnee], landmarks[rightAnkle]);
 
-    const isLiftingLeg = ankleVerticalDiff > 0.08 || leftKneeAngle < 160 || rightKneeAngle < 160;
+    const isLiftingLeg = ankleVerticalDiff > 0.04 || leftKneeAngle < 170 || rightKneeAngle < 170;
 
     if (isLiftingLeg) {
       return createStaticResult('Good balance! Hold steady.', undefined, 0.90);
