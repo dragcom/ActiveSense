@@ -155,6 +155,7 @@ const saveMedicalConditionLabels = async (userId: string, labels: string[]) => {
 // Convert a Supabase user_profiles row into the app's UserProfile type.
 const toUserProfile = (row: any, medicalConditions: string[] = ['None']): UserProfile => ({
   name: row.display_name ?? '',
+  email: row.email ?? '',
   age: row.age ?? 0,
   fitnessLevel: row.fitness_level ?? 'Beginner',
   medicalConditions,
@@ -212,7 +213,6 @@ export const saveUserProfile = async (profile: UserProfile) => {
 
 // Read the profile back with safe defaults for older saved data.
 export const getUserProfile = async (): Promise<UserProfile | null> => {
-  // Prefer Supabase for authenticated users so profile edits sync across devices.
   const userId = await getCurrentSupabaseUserId();
   if (supabase && userId) {
     const { data, error } = await supabase
@@ -220,14 +220,24 @@ export const getUserProfile = async (): Promise<UserProfile | null> => {
       .select('display_name, age, fitness_level, preferred_intensity, privacy_mode, avatar_config, created_at')
       .eq('id', userId)
       .maybeSingle();
+
     if (error) {
       throw error;
     }
+
     if (data) {
-      return toUserProfile(data, await readMedicalConditionLabels(userId));
+      // Fetch authenticated email from Supabase Auth session if present
+      const { data: authData } = await supabase.auth.getUser();
+      const profile = toUserProfile(data, await readMedicalConditionLabels(userId));
+      
+      return {
+        ...profile,
+        email: authData?.user?.email ?? profile.email ?? '',
+      };
     }
   }
 
+  // Local AsyncStorage Fallback
   const profile = await AsyncStorage.getItem(USER_PROFILE_KEY);
   if (!profile) {
     return null;
@@ -235,6 +245,7 @@ export const getUserProfile = async (): Promise<UserProfile | null> => {
   const parsed = parseJSON<Partial<UserProfile>>(profile, 'user profile');
   return {
     name: parsed.name ?? '',
+    email: parsed.email ?? '',
     age: parsed.age ?? 0,
     fitnessLevel: parsed.fitnessLevel ?? 'Beginner',
     medicalConditions: parsed.medicalConditions ?? ['None'],

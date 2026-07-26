@@ -14,7 +14,7 @@
         "NSPhotoLibraryAddUsageDescription": "ActiveSense can save avatar booth snapshots to your photo library when you choose to export them."
       },
       "bundleIdentifier": "com.anonymous.ActiveSense"
-        },
+    },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#077362",
@@ -26,6 +26,7 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.INTERNET",
+        "android.permission.POST_NOTIFICATIONS",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_AUDIO",
         "android.permission.READ_MEDIA_IMAGES",
@@ -51,7 +52,14 @@
       ],
       "expo-asset",
       "expo-media-library",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#14B8A6"
+        }
+      ]
     ],
     "extra": {
       "eas": {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,11 +18,16 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import AvatarShowcaseView from '../components/AvatarShowcaseView';
 import IconBadge from '../components/IconBadge';
+import FitnessBuddy from '../components/FitnessBuddy';
 import { db } from '../services/database';
-import { defaultStats, getStats, getUserProfile, getWeeklyActivity } from '../services/storage';
+import {
+  defaultStats,
+  getStats,
+  getUserProfile,
+} from '../services/storage';
 import { defaultAvatarConfig, normalizeAvatarConfig } from '../data/avatars';
 import { MainTabParamList, RootStackParamList } from '../navigation/types';
-import { UserProfile, UserStats, WeeklyActivity, Workout } from '../types';
+import { UserProfile, UserStats, Workout } from '../types';
 
 type NavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Home'>,
@@ -33,10 +38,10 @@ type NavigationProp = CompositeNavigationProp<
 export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const isFocused = useIsFocused();
+  
   // These state values are refreshed whenever the tab becomes focused.
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats>(defaultStats);
-  const [weeklyData, setWeeklyData] = useState<WeeklyActivity[]>([]);
   const [highlightWorkout, setHighlightWorkout] = useState<Workout | null>(null);
   const [goalLabel, setGoalLabel] = useState('--');
   const [loading, setLoading] = useState(true);
@@ -46,13 +51,12 @@ export default function HomeScreen() {
 
   useEffect(() => {
     let mounted = true;
-    // Load profile, progress, chart data, and the recommended workout in one pass.
+    
     const loadData = async () => {
       try {
-        const [storedProfile, storedStats, activity] = await Promise.all([
+        const [storedProfile, storedStats] = await Promise.all([
           getUserProfile(),
           getStats(),
-          getWeeklyActivity(),
         ]);
         const [recommendedWorkout, dashboardSettings] = await Promise.all([
           db.getRecommendedWorkout(storedProfile),
@@ -62,7 +66,6 @@ export default function HomeScreen() {
           setLoadError(false);
           setProfile(storedProfile);
           setStats(storedStats);
-          setWeeklyData(activity);
           setHighlightWorkout(recommendedWorkout);
           setGoalLabel(dashboardSettings.goalLabel);
           setLoading(false);
@@ -77,7 +80,6 @@ export default function HomeScreen() {
     };
 
     if (isFocused) {
-      // Refetch after returning from a workout so Healthpoints and streaks update.
       setLoading(true);
       setLoadError(false);
       loadData();
@@ -89,7 +91,6 @@ export default function HomeScreen() {
   }, [isFocused, reloadKey]);
 
   if (loading) {
-    // Keep the tab usable while local storage and catalog data load.
     return (
       <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
         <View style={styles.loader}>
@@ -100,7 +101,6 @@ export default function HomeScreen() {
   }
 
   if (loadError || !highlightWorkout) {
-    // A failed read should leave the user with a clear action instead of a stuck tab.
     return (
       <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
         <View style={styles.emptyState}>
@@ -126,7 +126,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* The header gives the user a quick motivational snapshot. */}
+        {/* Header */}
         <LinearGradient colors={colors.gradient.primary} style={styles.header}>
           <View style={styles.headerTopRow}>
             <View style={{ flex: 1 }}>
@@ -161,7 +161,7 @@ export default function HomeScreen() {
           </View>
         </LinearGradient>
 
-        {/* Top-level stats are intentionally compact for fast scanning. */}
+        {/* Top-level Stats */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Healthpoints</Text>
@@ -177,7 +177,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Recommended workout is selected from profile preferences in the db facade. */}
+        {/* Recommended Workout */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recommended for you</Text>
           <TouchableOpacity onPress={() => navigation.navigate('Workouts')}>
@@ -214,42 +214,61 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Keep shortcuts to flows that are fully implemented. */}
+        {/* Fitness Buddy Section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Fitness Companion</Text>
+        </View>
+        <FitnessBuddy stats={stats} />
+
+        {/* Quick Actions */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Quick actions</Text>
         </View>
-        <View style={styles.actionsRow}>
-          <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Progress')}>
+
+        <View style={styles.actionsGrid}>
+          <TouchableOpacity 
+            style={styles.actionCard} 
+            onPress={() => navigation.navigate('Workouts')}
+          >
+            <LinearGradient colors={['#3B82F6', '#1D4ED8']} style={styles.actionIcon}>
+              <Feather name="compass" size={18} color="#fff" />
+            </LinearGradient>
+            <Text style={styles.actionText}>Explore Workouts</Text>
+            <Text style={styles.actionSubtext}>Find a new routine</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionCard} 
+            onPress={() => navigation.navigate('Progress')}
+          >
             <LinearGradient colors={colors.gradient.warning} style={styles.actionIcon}>
               <Feather name="gift" size={18} color="#fff" />
             </LinearGradient>
-            <Text style={styles.actionText}>Redeem rewards</Text>
+            <Text style={styles.actionText}>Redeem Rewards</Text>
+            <Text style={styles.actionSubtext}>Use earned HP</Text>
           </TouchableOpacity>
-        </View>
 
-        {/* Weekly activity turns saved workout sessions into a simple bar chart. */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Weekly activity</Text>
-          <View style={styles.weeklyBadge}>
-            <Text style={styles.weeklyBadgeText}>+{weeklyData.reduce((sum, d) => sum + d.points, 0)} HP</Text>
-          </View>
-        </View>
-        <View style={styles.weeklyChart}>
-          {weeklyData.map((day) => {
-            const maxWeeklyPoints = Math.max(100, ...weeklyData.map((item) => item.points));
-            const heightPercent = (day.points / maxWeeklyPoints) * 100;
-            return (
-              <View key={day.id} style={styles.weeklyBarContainer}>
-                <View style={styles.weeklyBarTrack}>
-                  <LinearGradient
-                    colors={colors.gradient.success}
-                    style={[styles.weeklyBarFill, { height: `${heightPercent}%` }]}
-                  />
-                </View>
-                <Text style={styles.weeklyLabel}>{day.day}</Text>
-              </View>
-            );
-          })}
+          <TouchableOpacity 
+            style={styles.actionCard} 
+            onPress={() => navigation.navigate('Progress')}
+          >
+            <LinearGradient colors={['#10B981', '#059669']} style={styles.actionIcon}>
+              <Feather name="award" size={18} color="#fff" />
+            </LinearGradient>
+            <Text style={styles.actionText}>Badges & Stats</Text>
+            <Text style={styles.actionSubtext}>View achievements</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionCard} 
+            onPress={() => navigation.navigate('Profile')}
+          >
+            <LinearGradient colors={['#8B5CF6', '#6D28D9']} style={styles.actionIcon}>
+              <Feather name="user" size={18} color="#fff" />
+            </LinearGradient>
+            <Text style={styles.actionText}>Profile & Goals</Text>
+            <Text style={styles.actionSubtext}>Update settings</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -367,50 +386,28 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   primaryButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  actionsRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 20 },
+  actionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    paddingHorizontal: 20,
+  },
   actionCard: {
+    width: '48%',
     backgroundColor: colors.background.card,
-    minWidth: 148,
     padding: 14,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   actionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionText: { marginTop: 8, fontSize: 11, fontWeight: '600', color: colors.text.primary },
-  weeklyBadge: {
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 9999,
-  },
-  weeklyBadgeText: { fontSize: 11, color: colors.primary.teal, fontWeight: '600' },
-  weeklyChart: {
-    marginHorizontal: 20,
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: colors.background.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  weeklyBarContainer: { alignItems: 'center', flex: 1 },
-  weeklyBarTrack: {
-    height: 120,
-    width: 12,
-    backgroundColor: colors.background.muted,
-    borderRadius: 9999,
-    overflow: 'hidden',
-    justifyContent: 'flex-end',
-  },
-  weeklyBarFill: { width: '100%', borderRadius: 9999 },
-  weeklyLabel: { fontSize: 10, color: colors.text.secondary, marginTop: 8 },
+  actionText: { marginTop: 10, fontSize: 12, fontWeight: '700', color: colors.text.primary },
+  actionSubtext: { marginTop: 2, fontSize: 10, color: colors.text.secondary },
 });

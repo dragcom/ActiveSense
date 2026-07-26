@@ -15,6 +15,9 @@ export type RootStackParamList = {
   };
   Main: undefined;
   WorkoutSession: { workoutId?: number } | undefined;
+  AccountSettings: undefined;
+  Notifications: undefined;
+  HelpSupport: undefined;
 };
 
 // The bottom tabs live inside the root stack's Main screen.

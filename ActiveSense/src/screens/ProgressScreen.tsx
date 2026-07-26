@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -111,9 +111,9 @@ export default function ProgressScreen() {
     }
   };
 
+  const displayedDailyData = dailyData.slice(-6);
   const getPoints = (day: DailyActivity) => day.points ?? 0;
-
-  const maxPoints = Math.max(1, ...dailyData.map(getPoints));
+  const maxPoints = Math.max(1, ...displayedDailyData.map(getPoints));
   const totalDailyPoints = dailyData.reduce((sum, day) => sum + getPoints(day), 0);
 
   return (
@@ -146,7 +146,7 @@ export default function ProgressScreen() {
             </View>
 
             {/* Horizontal Scroll View */}
-            {dailyData.length === 0 ? (
+            {displayedDailyData.length === 0 ? (
               <View style={styles.emptyChartState}>
                 <Text style={styles.emptyText}>No workout points earned yet.</Text>
               </View>
@@ -156,18 +156,16 @@ export default function ProgressScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.chartScrollContainer}
               >
-                {dailyData.map((day) => {
+                {displayedDailyData.map((day) => {
                   const points = getPoints(day);
                   const heightPercent = points > 0 ? Math.max((points / maxPoints) * 100, 18) : 0;
 
                   return (
                     <View key={day.id} style={styles.barContainer}>
-                      {/* Points badge above bar (invisible on 0-point days) */}
                       <Text style={[styles.barValueText, points === 0 && { opacity: 0 }]}>
                         {points}
                       </Text>
 
-                      {/* Empty track pill background stays visible for ALL days */}
                       <View style={styles.barTrack}>
                         {points > 0 && (
                           <LinearGradient
@@ -177,7 +175,6 @@ export default function ProgressScreen() {
                         )}
                       </View>
 
-                      {/* Dynamic date label (e.g. "Jul 21", "Jul 22", "Today") */}
                       <Text
                         style={[
                           styles.dayLabel,
@@ -195,7 +192,7 @@ export default function ProgressScreen() {
             <View style={styles.chartSummary}>
               <Text style={styles.chartSummaryValue}>{totalDailyPoints.toLocaleString()} HP</Text>
               <Text style={styles.chartSummaryLabel}>
-                total Healthpoints earned from logged workouts
+                Total health points earned from logged workouts
               </Text>
             </View>
           </View>

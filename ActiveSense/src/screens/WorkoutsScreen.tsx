@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,24 +11,29 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { CompositeNavigationProp, useNavigation } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import IconBadge from '../components/IconBadge';
-import { db } from '../services/database';
+import { calculateWorkoutMatch, db } from '../services/database';
+import { getUserProfile } from '../services/storage';
 import { MainTabParamList, RootStackParamList } from '../navigation/types';
-import { Workout } from '../types';
+import { UserProfile, Workout } from '../types';
 
 type NavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Workouts'>,
   NativeStackNavigationProp<RootStackParamList>
 >;
 
+// Limit the 'For You' tab to only show the top 3 best matches
+const TOP_RECOMMENDATIONS_LIMIT = 3;
+// Strict threshold: Must be an 80%+ match to be recommended
+const STRICT_RECOMMENDATION_THRESHOLD = 80;
+
 const fallbackGradient: [string, string] = ['#14B8A6', '#06B6D4'];
 
-// Workouts can come from Supabase, so normalize every field before rendering UI.
 const normalizeWorkout = (workout: Workout): Workout => ({
   ...workout,
   title: workout.title?.trim() || 'Untitled workout',
@@ -47,9 +52,8 @@ const normalizeWorkout = (workout: Workout): Workout => ({
   intensity: workout.intensity?.trim() || 'Low',
 });
 
-// Include categories and difficulty labels that actually exist in the loaded catalog.
 const buildCategoryChips = (categories: string[], workouts: Workout[]) => {
-  const labels = new Set<string>(['All']);
+  const labels = new Set<string>(['For You', 'All']);
   categories.filter(Boolean).forEach((category) => labels.add(category));
   workouts.forEach((workout) => {
     labels.add(workout.category);
@@ -58,33 +62,35 @@ const buildCategoryChips = (categories: string[], workouts: Workout[]) => {
   return [...labels];
 };
 
-// WorkoutsScreen lets users search, filter, and start catalog workouts.
 export default function WorkoutsScreen() {
   const navigation = useNavigation<NavigationProp>();
-  // Filters are local UI state; the catalog itself is loaded from the db facade.
-  const [activeCategory, setActiveCategory] = useState('All');
+  const [activeCategory, setActiveCategory] = useState('For You');
   const [searchQuery, setSearchQuery] = useState('');
   const [workouts, setWorkouts] = useState<Workout[]>([]);
-  const [workoutCategories, setWorkoutCategories] = useState<string[]>(['All']);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [workoutCategories, setWorkoutCategories] = useState<string[]>(['For You', 'All']);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let mounted = true;
-    // Load workout cards and category chips once when the screen mounts.
-    const loadWorkouts = async () => {
+    const loadWorkoutsAndProfile = async () => {
       try {
-        const [storedWorkouts, storedCategories] = await Promise.all([
+        const [storedWorkouts, storedCategories, profile] = await Promise.all([
           db.getWorkouts(),
           db.getWorkoutCategories(),
+          getUserProfile(),
         ]);
         if (mounted) {
           const normalizedWorkouts = storedWorkouts.map(normalizeWorkout);
           setWorkouts(normalizedWorkouts);
+          setUserProfile(profile);
           setWorkoutCategories(buildCategoryChips(storedCategories, normalizedWorkouts));
           setActiveCategory((current) =>
-            buildCategoryChips(storedCategories, normalizedWorkouts).includes(current) ? current : 'All',
+            buildCategoryChips(storedCategories, normalizedWorkouts).includes(current)
+              ? current
+              : 'For You'
           );
           setLoadError(false);
           setLoading(false);
@@ -98,29 +104,50 @@ export default function WorkoutsScreen() {
       }
     };
 
-    loadWorkouts();
+    loadWorkoutsAndProfile();
 
     return () => {
       mounted = false;
     };
   }, [reloadKey]);
 
+  // Sort workouts from highest score to lowest score using database's central scoring function
+  const scoredWorkouts = useMemo(() => {
+    return workouts
+      .map((workout) => {
+        const { score, reason } = calculateWorkoutMatch(workout, userProfile);
+        return { workout, score, reason };
+      })
+      .sort((a, b) => b.score - a.score);
+  }, [workouts, userProfile]);
+
   const filteredWorkouts = useMemo(() => {
-    // Filtering stays memoized so typing in search does not recompute unrelated work.
     const normalizedQuery = searchQuery.trim().toLowerCase();
-    return workouts.filter((workout) => {
-      const matchesCategory =
-        activeCategory === 'All' ||
-        workout.category === activeCategory ||
-        workout.difficulty === activeCategory;
-      const matchesSearch =
+
+    let list = scoredWorkouts;
+
+    // Strict filtering for 'For You' tab
+    if (activeCategory === 'For You') {
+      list = scoredWorkouts
+        .filter((item) => item.score >= STRICT_RECOMMENDATION_THRESHOLD) // Must meet strict threshold
+        .slice(0, TOP_RECOMMENDATIONS_LIMIT); // Take only top few
+    } else if (activeCategory !== 'All') {
+      list = scoredWorkouts.filter(
+        (item) =>
+          item.workout.category === activeCategory ||
+          item.workout.difficulty === activeCategory
+      );
+    }
+
+    return list.filter(({ workout }) => {
+      return (
         !normalizedQuery ||
         workout.title.toLowerCase().includes(normalizedQuery) ||
         workout.description.toLowerCase().includes(normalizedQuery) ||
-        workout.category.toLowerCase().includes(normalizedQuery);
-      return matchesCategory && matchesSearch;
+        workout.category.toLowerCase().includes(normalizedQuery)
+      );
     });
-  }, [activeCategory, searchQuery, workouts]);
+  }, [activeCategory, searchQuery, scoredWorkouts]);
 
   const retryLoad = () => {
     setLoading(true);
@@ -129,7 +156,6 @@ export default function WorkoutsScreen() {
   };
 
   if (loading) {
-    // Show a centered spinner while the catalog is being prepared.
     return (
       <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
         <View style={styles.loader}>
@@ -142,7 +168,6 @@ export default function WorkoutsScreen() {
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
       <View style={styles.header}>
-        {/* Search narrows the visible workout cards by title. */}
         <Text style={styles.headerTitle}>Workouts</Text>
         <View style={styles.searchBar}>
           <Feather name="search" size={18} color={colors.text.tertiary} />
@@ -163,7 +188,6 @@ export default function WorkoutsScreen() {
         </View>
       </View>
 
-      {/* Category chips let users browse by workout category or difficulty. */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -179,6 +203,14 @@ export default function WorkoutsScreen() {
               activeCategory === category && styles.categoryChipActive,
             ]}
           >
+            {category === 'For You' ? (
+              <Ionicons
+                name="sparkles"
+                size={12}
+                color={activeCategory === 'For You' ? '#fff' : colors.primary.teal}
+                style={{ marginRight: 4 }}
+              />
+            ) : null}
             <Text
               style={[
                 styles.categoryText,
@@ -192,72 +224,104 @@ export default function WorkoutsScreen() {
       </ScrollView>
 
       <Text style={styles.resultsCount}>
-        {filteredWorkouts.length} workout{filteredWorkouts.length !== 1 ? 's' : ''} found
+        {`${filteredWorkouts.length} workout${filteredWorkouts.length !== 1 ? 's' : ''} found`}
       </Text>
 
-      {/* Each workout card can launch a camera-tracked session. */}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {filteredWorkouts.length === 0 && (
+        {filteredWorkouts.length === 0 ? (
           <View style={styles.emptyState}>
-            <Feather name={loadError ? 'refresh-cw' : 'database'} size={26} color={colors.text.tertiary} />
-            <Text style={styles.emptyTitle}>{loadError ? 'Unable to load workouts' : 'No workouts found'}</Text>
+            <Feather name={loadError ? 'refresh-cw' : 'slash'} size={26} color={colors.text.tertiary} />
+            <Text style={styles.emptyTitle}>
+              {loadError
+                ? 'Unable to load workouts'
+                : activeCategory === 'For You'
+                ? 'No strict matches found'
+                : 'No workouts found'}
+            </Text>
             <Text style={styles.emptyCopy}>
               {loadError
                 ? 'Check Supabase setup, then retry.'
-                : 'Check your Supabase seed data or adjust the search filters.'}
+                : activeCategory === 'For You'
+                ? 'No workouts strictly matched both your fitness level and intensity preferences. Check the "All" tab to browse all workouts.'
+                : 'Check your search filters or catalog.'}
             </Text>
-            {loadError && (
+            {loadError ? (
               <TouchableOpacity style={styles.retryButton} onPress={retryLoad}>
                 <Text style={styles.retryButtonText}>Retry</Text>
               </TouchableOpacity>
-            )}
+            ) : null}
           </View>
-        )}
-        {filteredWorkouts.map((workout) => (
-          <View key={workout.id} style={styles.workoutCard}>
-            <LinearGradient
-              colors={workout.gradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.workoutHeader}
-            >
-              <View style={styles.categoryBadge}>
-                <Text style={styles.categoryBadgeText}>{workout.category}</Text>
-              </View>
-              <IconBadge icon={workout.emoji} size={42} />
-            </LinearGradient>
-            <View style={styles.workoutBody}>
-              <Text style={styles.workoutTitle}>{workout.title}</Text>
-              <Text style={styles.workoutDescription}>{workout.description}</Text>
-              <View style={styles.workoutMeta}>
-                <View style={styles.metaItem}>
-                  <Feather name="clock" size={14} color={colors.primary.teal} />
-                  <Text style={styles.metaText}>{workout.duration}</Text>
+        ) : null}
+
+        {filteredWorkouts.map(({ workout, score, reason }) => {
+          const isBestMatch = score >= STRICT_RECOMMENDATION_THRESHOLD;
+
+          return (
+            <View key={workout.id} style={styles.workoutCard}>
+              <LinearGradient
+                colors={workout.gradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.workoutHeader}
+              >
+                <View style={styles.badgeRow}>
+                  <View style={styles.categoryBadge}>
+                    <Text style={styles.categoryBadgeText}>{workout.category}</Text>
+                  </View>
+
+                  {/* Render 'Best Match' badge ONLY if it meets strict threshold */}
+                  {isBestMatch ? (
+                    <View style={styles.recommendedBadge}>
+                      <Ionicons name="sparkles" size={10} color="#fff" />
+                      <Text style={styles.recommendedBadgeText}>Best Match</Text>
+                    </View>
+                  ) : null}
                 </View>
-                <View style={styles.metaItem}>
-                  <Feather name="zap" size={14} color={colors.primary.teal} />
-                  <Text style={styles.metaText}>{workout.calories}</Text>
-                </View>
-                <View style={styles.metaItem}>
-                  <Feather name="activity" size={14} color={colors.primary.teal} />
-                  <Text style={styles.metaText}>{workout.difficulty}</Text>
-                </View>
-              </View>
-              <LinearGradient colors={colors.gradient.primary} style={styles.workoutButton}>
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('WorkoutSession', { workoutId: workout.id })}
-                  style={styles.workoutButtonInner}
-                >
-                  <Text style={styles.workoutButtonText}>Start Workout</Text>
-                </TouchableOpacity>
+                <IconBadge icon={workout.emoji} size={42} />
               </LinearGradient>
+
+              <View style={styles.workoutBody}>
+                <Text style={styles.workoutTitle}>{workout.title}</Text>
+                <Text style={styles.workoutDescription}>{workout.description}</Text>
+
+                {Boolean(userProfile && reason) ? (
+                  <View style={styles.reasonCard}>
+                    <Feather name="check-circle" size={12} color={colors.primary.teal} />
+                    <Text style={styles.reasonText}>{reason}</Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.workoutMeta}>
+                  <View style={styles.metaItem}>
+                    <Feather name="clock" size={14} color={colors.primary.teal} />
+                    <Text style={styles.metaText}>{workout.duration}</Text>
+                  </View>
+                  <View style={styles.metaItem}>
+                    <Feather name="zap" size={14} color={colors.primary.teal} />
+                    <Text style={styles.metaText}>{workout.calories}</Text>
+                  </View>
+                  <View style={styles.metaItem}>
+                    <Feather name="activity" size={14} color={colors.primary.teal} />
+                    <Text style={styles.metaText}>{workout.difficulty}</Text>
+                  </View>
+                </View>
+
+                <LinearGradient colors={colors.gradient.primary} style={styles.workoutButton}>
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate('WorkoutSession', { workoutId: workout.id })}
+                    style={styles.workoutButtonInner}
+                  >
+                    <Text style={styles.workoutButtonText}>Start Workout</Text>
+                  </TouchableOpacity>
+                </LinearGradient>
+              </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );
@@ -281,6 +345,8 @@ const styles = StyleSheet.create({
   categoriesContainer: { flexGrow: 0 },
   categoriesContent: { paddingHorizontal: 20, gap: 8, paddingBottom: 6 },
   categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 9999,
@@ -318,6 +384,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
+  badgeRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
   categoryBadge: {
     backgroundColor: 'rgba(255,255,255,0.3)',
     paddingHorizontal: 12,
@@ -325,9 +392,32 @@ const styles = StyleSheet.create({
     borderRadius: 9999,
   },
   categoryBadgeText: { fontSize: 12, fontWeight: '600', color: '#fff' },
+  recommendedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 9999,
+  },
+  recommendedBadgeText: { fontSize: 10, fontWeight: '700', color: '#fff' },
   workoutBody: { padding: 16 },
   workoutTitle: { fontSize: 16, fontWeight: '700', color: colors.text.primary },
   workoutDescription: { fontSize: 12, color: colors.text.secondary, marginTop: 4 },
+  reasonCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ECFEFF',
+    borderColor: '#CCFBF1',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    marginTop: 10,
+  },
+  reasonText: { fontSize: 11, fontWeight: '600', color: colors.primary.teal, flexShrink: 1 },
   workoutMeta: { flexDirection: 'row', gap: 16, marginTop: 12 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 12, color: colors.text.secondary },

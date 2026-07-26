@@ -1,6 +1,7 @@
 // Shared app types describe the data shape moving between screens and services.
 export type UserProfile = {
   name: string;
+  email?: string;
   age: number;
   fitnessLevel: string;
   medicalConditions: string[];

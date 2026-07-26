@@ -2,7 +2,6 @@ import {
   Achievement,
   OnboardingChoices,
   PoseTrainingSample,
-  RewardVoucher,
   UserProfile,
   UserStats,
   Workout,
@@ -190,37 +189,70 @@ const fallbackAchievementsForStats = (stats: UserStats) =>
     unlocked: stats[achievement.requirementType] >= achievement.requirementValue,
   }));
 
-// Recommended workout fallback uses the same profile ranking idea as Supabase rows.
-const fallbackRecommendedWorkout = (profile: UserProfile | null) => {
-  const [first] = [...fallbackWorkouts].sort((a, b) => {
-    const score = (workout: Workout) =>
-      (profile?.fitnessLevel === workout.difficulty ? 4 : 0) +
-      (profile?.preferredIntensity === workout.intensity ? 3 : 0) +
-      (profile && profile.age >= 55 && workout.category === 'Healthy Ageing' ? 5 : 0);
-    return score(b) - score(a);
-  });
-  return first ?? fallbackWorkouts[0];
+// Exported Scoring Engine (Single Source of Truth)
+export const calculateWorkoutMatch = (
+  workout: Workout,
+  profile: UserProfile | null
+): { score: number; reason: string } => {
+  if (!profile) {
+    return { score: 0, reason: '' };
+  }
+
+  let score = 0;
+  const reasons: string[] = [];
+
+  const userLevel = profile.fitnessLevel?.toLowerCase();
+  const workoutLevel = workout.difficulty?.toLowerCase();
+  const userIntensity = profile.preferredIntensity?.toLowerCase();
+  const workoutIntensity = workout.intensity?.toLowerCase();
+
+  // 1. Fitness Level Match (45 points)
+  if (userLevel && workoutLevel === userLevel) {
+    score += 45;
+    reasons.push(`Matches ${profile.fitnessLevel} level`);
+  }
+
+  // 2. Preferred Intensity Match (35 points)
+  if (userIntensity && workoutIntensity === userIntensity) {
+    score += 35;
+    reasons.push(`Fits ${profile.preferredIntensity} intensity`);
+  }
+
+  // 3. Health & Safety check against medical conditions
+  const hasMedicalConditions = profile.medicalConditions?.some((c) => c && c !== 'None');
+  if (hasMedicalConditions) {
+    const isHighImpact =
+      workoutIntensity === 'high' ||
+      workout.category.toLowerCase().includes('hiit');
+
+    const hasJointOrKneeIssues = profile.medicalConditions.some(
+      (c) => c && (c.toLowerCase().includes('joint') || c.toLowerCase().includes('knee'))
+    );
+
+    if (hasJointOrKneeIssues && isHighImpact) {
+      return { score: 0, reason: 'Not suitable for joint/knee issues' };
+    } else {
+      score += 20;
+      reasons.push('Safe for health profile');
+    }
+  } else {
+    score += 20;
+  }
+
+  const finalScore = Math.min(100, Math.max(0, score));
+
+  return {
+    score: finalScore,
+    reason: reasons.length > 0 ? reasons.join(' • ') : '',
+  };
 };
 
-// Score workouts against the user's profile so Home can pick a recommendation from database rows.
-const rankWorkoutForProfile = (profile: UserProfile | null) => (row: WorkoutRow) => {
-  let score = 0;
-  if (!profile) {
-    return score;
-  }
-  if (row.difficulty === profile.fitnessLevel) {
-    score += 4;
-  }
-  if (row.intensity === profile.preferredIntensity) {
-    score += 3;
-  }
-  if (profile.age >= 55 && row.recommended_min_age) {
-    score += 5;
-  }
-  if (profile.age < 55 && row.recommended_max_age) {
-    score += 2;
-  }
-  return score;
+// Recommended workout fallback uses calculateWorkoutMatch
+const fallbackRecommendedWorkout = (profile: UserProfile | null) => {
+  const [first] = [...fallbackWorkouts].sort(
+    (a, b) => calculateWorkoutMatch(b, profile).score - calculateWorkoutMatch(a, profile).score
+  );
+  return first ?? fallbackWorkouts[0];
 };
 
 // Throw a helpful error when Supabase returns a failed response.
@@ -273,7 +305,7 @@ export const db = {
     });
   },
 
-  // Pick the best workout for the user's age, level, and intensity preference.
+  // Pick the best workout for the user using calculateWorkoutMatch
   async getRecommendedWorkout(profile: UserProfile | null) {
     return readOrFallback('recommended workout', fallbackRecommendedWorkout(profile), async () => {
       const { data, error } = await requireSupabase()
@@ -283,13 +315,14 @@ export const db = {
         .order('id', { ascending: true });
       assertNoError(error);
       const rows = (data as WorkoutRow[] | null) ?? [];
-      const [first] = [...rows].sort(
-        (a, b) => rankWorkoutForProfile(profile)(b) - rankWorkoutForProfile(profile)(a),
+      const workouts = rows.map(toWorkout);
+      const [first] = [...workouts].sort(
+        (a, b) => calculateWorkoutMatch(b, profile).score - calculateWorkoutMatch(a, profile).score
       );
       if (!first) {
         throw new Error('Supabase returned no recommended workout. Run db/seed.sql for the ActiveSense project.');
       }
-      return toWorkout(first);
+      return first;
     });
   },
 
@@ -455,5 +488,4 @@ export const db = {
       };
     });
   },
-
 };
