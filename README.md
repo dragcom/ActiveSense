@@ -8,9 +8,6 @@ Milestone III Final Technical README
 
 **Team members:** Tan Yi Xun and Chan Yi Long
 
-**Repository:**
-[[github.com/dragcom/ActiveSense]{.ul}](https://github.com/dragcom/ActiveSense)
-
 Implementation snapshot: 26 July 2026
 
 #  
@@ -180,7 +177,7 @@ isolate differences in camera, WebView, GLB, and pose-rendering
 behaviour while sharing navigation, workout state, scoring, and
 persistence logic.
 
-![](images/media/image2.png){width="6.5in" height="3.625in"}
+![](images/media/image2.png)
 
 *Figure 1. ActiveSense system architecture and privacy boundary.*
 
@@ -208,20 +205,17 @@ persistence logic.
 
 # **6. User Journey and Interface**
 
-![](images/media/image26.png){width="6.5in"
-height="3.9027777777777777in"}
+![](images/media/image26.png)
 
 *Figure 2. Final user journey: onboarding, Home, workout discovery,
 progress, and health profile.*
 
-![](images/media/image10.png){width="6.5in"
-height="2.1805555555555554in"}
+![](images/media/image10.png)
 
 *Figure 3. Screenshots captured from the current ActiveSense web build:
 product entry and Supabase authentication.*
 
-![](images/media/image28.png){width="6.5in"
-height="3.611111111111111in"}
+![](images/media/image28.png)
 
 *Figure 4. Signed-in Home dashboard captured from the current iOS
 development build.*
@@ -273,12 +267,11 @@ points, and Calf Raises at 2 sets of 12 for 30 points. Mobility &
 Flexibility contains Overhead Reach, Side Bend and Torso Twist, each at
 2 sets of 10 for 25 points.
 
-![](images/media/image23.png){width="6.5in" height="2.125in"}
+![](images/media/image23.png)
 
 *Figure 5. Local pose-processing and derived-data flow.*
 
-![](images/media/image22.png){width="6.5in"
-height="3.9722222222222223in"}
+![](images/media/image22.png)
 
 *Figure 6. Captured full-body detection, feedback, and avatar-oriented
 workout views.*
@@ -304,8 +297,7 @@ Posture rules use joint angles only when the required landmarks are
 visible. This prevents a missing wrist, ankle, or shoulder from being
 treated as a valid movement measurement.
 
-![](images/media/image21.png){width="6.5in"
-height="3.111111111111111in"}
+![](images/media/image21.png)
 
 *Figure 7. Joint-angle calculation and landmark visibility checks in
 src/utils/postureRules.ts.*
@@ -317,7 +309,7 @@ static hold must remain stable for 1.8 seconds, while a dynamic
 repetition must move from the bottom position back to the top. Both
 paths include timing guards and a target-repetition cap.
 
-![](images/media/image25.png){width="6.5in" height="6.75in"}
+![](images/media/image25.png)
 
 *Figure 8. Static-hold and dynamic-repetition state handling in
 src/utils/workoutPoseCounter.ts.*
@@ -348,8 +340,7 @@ triggering the counter without controlled movement.
 
 # **8.** Recommendation of exercises based on Profile Ranking, and Healthy-Ageing Support
 
-![](images/media/image7.png){width="6.5in"
-height="2.1805555555555554in"}
+![](images/media/image7.png)
 
 *Figure 9. Screenshots captured from the current ActiveSense web build:
 fitness-level selection and health-consideration onboarding.*
@@ -404,8 +395,7 @@ coupon containing a Code 128 barcode. The coupon also displays whether
 it is ready to redeem or has been used, together with the recorded usage
 time and merchant label when those values are available.
 
-![](images/media/image16.png){width="6.5in"
-height="3.9722222222222223in"}
+![](images/media/image16.png)
 
 *Figure 10. Pull request (PR) \#11 reward flow captured from the iOS
 development build using seeded prototype values.*
@@ -418,7 +408,7 @@ duplicate-redemption check are completed before the points balance is
 changed. A separate authenticated mark_voucher_used function records
 used_at and used_by for the merchant-scanner prototype.
 
-![](images/media/image4.png){width="6.5in" height="5.055555555555555in"}
+![](images/media/image4.png)
 
 *Figure 11. Atomic voucher redemption and Healthpoints update in
 db/schema.sql.*
@@ -431,10 +421,9 @@ would evolve upon reaching the 200 KI power level or health points.
 There are also animations and various encouraging messages displayed to
 further encourage users to continue to stay fit.
 
-![](images/media/image15.png){width="2.122916666666667in"
-height="2.5123272090988626in"}![](images/media/image13.png){width="2.089583333333333in"
-height="2.4583333333333335in"}![](images/media/image29.png){width="2.075in"
-height="2.4781988188976376in"}
+![](images/media/image15.png)
+![](images/media/image13.png)
+![](images/media/image29.png)
 
 *Figure 12. Examples of the first 3 different stages of the fitness
 companion*
@@ -448,22 +437,20 @@ landmarks can be mapped to an avatar rig so that the user can focus on a
 simplified body representation. The avatar view can reduce camera
 anxiety while keeping the movement feedback visible.
 
-![](images/media/image8.png){width="0.8318558617672791in"
-height="0.8318558617672791in"}![](images/media/image11.png){width="0.5401891951006125in"
-height="0.5401891951006125in"}![](images/media/image18.png){width="0.8666666666666667in"
-height="0.8574464129483814in"}![](images/media/image11.png){width="0.5568558617672791in"
-height="0.5568558617672791in"}![](images/media/image1.png){width="0.75in"
-height="0.75in"}![](images/media/image11.png){width="0.5318558617672791in"
-height="0.5318558617672791in"}![](images/media/image14.png){width="0.71875in"
-height="0.71875in"}![](images/media/image11.png){width="0.5318558617672791in"
-height="0.5318558617672791in"}![](images/media/image20.png){width="0.7375in"
-height="0.7375in"}
+![](images/media/image8.png)
+![](images/media/image11.png)
+![](images/media/image18.png)
+![](images/media/image11.png)
+![](images/media/image1.png)
+![](images/media/image11.png)
+![](images/media/image14.png)
+![](images/media/image11.png)
+![](images/media/image20.png)
 
-![](images/media/image6.png){width="1.1979166666666667in"
-height="1.1979166666666667in"}![](images/media/image5.png){width="1.8583333333333334in"
-height="1.078183508311461in"}![](images/media/image27.png){width="1.2416666666666667in"
-height="1.2416666666666667in"}![](images/media/image17.png){width="1.83125in"
-height="1.1209470691163606in"}
+![](images/media/image6.png)
+![](images/media/image5.png)
+![](images/media/image27.png)
+![](images/media/image17.png)
 
 *Figure 13. 3D Avatar Tech Stack*
 
@@ -485,7 +472,7 @@ controls. We also used Zustand to manage global state, including active
 categories, selected equipment/clothing items, skin color, and fetched
 backend metadata.
 
-![](images/media/image9.png){width="6.5in" height="3.611111111111111in"}
+![](images/media/image9.png)
 
 *Figure 14. Avatar customisation, capture and example configurations.
 Figure 6 also shows the avatar rendered during a workout.*
@@ -497,8 +484,7 @@ requirement for pose tracking.
 
 # **11. Backend and Data Model**
 
-![](images/media/image24.png){width="6.5in"
-height="3.8333333333333335in"}
+![](images/media/image24.png)
 
 *Figure 15. Entity relationship diagram for the main Supabase/PostgreSQL
 tables.*
@@ -629,14 +615,13 @@ contains scripts/verify-supabase.js for connected database checks.
 Broader physical-device regression across different device models is
 still required.
 
-![](images/media/image19.png){width="6.5in"
-height="3.0833333333333335in"}
+![](images/media/image19.png)
 
-![](images/media/image12.png){width="6.5in"
-height="3.0833333333333335in"}
+![](images/media/image12.png)
 
-![](images/media/image3.png){width="6.5in"
-height="3.986111111111111in"}Historical PR \#11 verification: before PR
+![](images/media/image3.png)
+
+Historical PR \#11 verification: before PR
 \#11 was merged, the reward-redemption work completed a connected
 Supabase verifier, TypeScript checking, iOS and Android Expo exports,
 and a native launch on an iPhone 16e simulator. This PR \#11 work is
