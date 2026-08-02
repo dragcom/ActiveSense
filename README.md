@@ -10,8 +10,6 @@ Milestone III Final Technical README
 
 Implementation snapshot: 26 July 2026
 
-#  
-
 # **Executive Summary**
 
 ActiveSense is a cross-platform fitness coaching application that helps
@@ -35,8 +33,6 @@ The following sections explain what was built, how the main components
 work together, how the implementation was tested, and where the current
 limitations remain. Completed features are separated from deferred work
 so that the final product can be assessed against the original proposal.
-
-#  
 
 # **Contents**
 
@@ -121,25 +117,25 @@ intended as general exercise guidance.
 # **2. Target Users and User Stories**
 
 1.  **Busy student:** As a student without a gym membership, I want
-    > equipment-light workouts and immediate form cues so that I can
-    > exercise efficiently in a small space.
+    equipment-light workouts and immediate form cues so that I can
+    exercise efficiently in a small space.
 
 2.  **Older adult:** As an older adult with limited mobility, I want
-    > low-impact routines and clear positioning guidance so that I can
-    > follow an appropriate session at home.
+    low-impact routines and clear positioning guidance so that I can
+    follow an appropriate session at home.
 
 3.  **Motivation-focused user:** As a user who struggles with
-    > consistency, I want points, streaks, progress charts, and
-    > achievements so that completed activity feels rewarding.
+    consistency, I want points, streaks, progress charts, and
+    achievements so that completed activity feels rewarding.
 
 4.  **Privacy-conscious user:** As a user concerned about camera
-    > privacy, I want pose processing to occur locally and an
-    > avatar-oriented workout view so that raw video does not need to be
-    > stored remotely.
+    privacy, I want pose processing to occur locally and an
+    avatar-oriented workout view so that raw video does not need to be
+    stored remotely.
 
 5.  **Returning user:** As a returning user, I want my profile, workout
-    > history, points and redeemed rewards to persist so that I can
-    > continue where I left off.
+    history, points and redeemed rewards to persist so that I can
+    continue where I left off.
 
 # **3. Final Scope and Milestone Evolution**
 
@@ -184,24 +180,24 @@ persistence logic.
 ## **Architectural layers**
 
 -   **Presentation:** authentication, onboarding, Home, Workouts,
-    > Progress, Profile, and full-screen workout sessions, fitness
-    > companion.
+    Progress, Profile, and full-screen workout sessions, fitness
+    companion.
 
 -   **Workout intelligence:** MediaPipe landmarks, visibility
-    > validation, posture rules, pose classification, repetition state,
-    > recommendation of exercises, and scoring.
+    validation, posture rules, pose classification, repetition state,
+    recommendation of exercises, and scoring.
 
 -   **Avatar rendering:** Three.js/three-ios, GLB assets, WebViews, and
-    > pose-to-avatar rig transformations.
+    pose-to-avatar rig transformations.
 
 -   **Application services:** database facade, user-profile storage,
-    > session persistence, points, achievements, fallback behaviour,
-    > account settings, notifications, help, and support.
+    session persistence, points, achievements, fallback behaviour,
+    account settings, notifications, help, and support.
 
 -   **Backend:** Supabase Authentication (Auth), PostgreSQL, RLS,
-    > triggers, indexes, and transactional remote procedure call (RPC)
-    > functions for workout completion, voucher redemption, and marking
-    > a coupon as used.
+    triggers, indexes, and transactional remote procedure call (RPC)
+    functions for workout completion, voucher redemption, and marking
+    a coupon as used.
 
 # **6. User Journey and Interface**
 
@@ -221,30 +217,30 @@ product entry and Supabase authentication.*
 development build.*
 
 1.  A new user creates an account and completes the health-aware
-    > onboarding sequence.
+    onboarding sequence.
 
 2.  The Home screen loads profile information, current streak, health
-    > points, total workouts, weekly activity, and one profile-ranked
-    > workout suggestion.
+    points, total workouts, weekly activity, and one profile-ranked
+    workout suggestion.
 
 3.  The Workouts screen presents catalogue filters and launches a
-    > full-screen camera-led session.
+    full-screen camera-led session.
 
 4.  The session produces immediate visual and spoken feedback, counts
-    > valid movement cycles, and calculates earned points.
+    valid movement cycles, and calculates earned points.
 
 5.  After completion, the derived results update both the spendable and
-    > lifetime health points totals. Lifetime points remain available
-    > for achievement checks even after the current balance is spent.
+    lifetime health points totals. Lifetime points remain available
+    for achievement checks even after the current balance is spent.
 
 6.  A redeemed reward changes from **Redeem** to **Open**. The user can
-    > reopen the unique coupon barcode and view whether it is ready or
-    > already used.
+    reopen the unique coupon barcode and view whether it is ready or
+    already used.
 
 7.  The Profile screen allows the user to review health considerations,
-    > the current privacy label, goals, and avatar configuration. The
-    > saved privacy label defaults to Avatar; camera and avatar
-    > presentation can be toggled during a workout.
+    the current privacy label, goals, and avatar configuration. The
+    saved privacy label defaults to Avatar; camera and avatar
+    presentation can be toggled during a workout.
 
 # **7. Real-Time Pose Coaching**
 
@@ -315,20 +311,20 @@ paths include timing guards and a target-repetition cap.
 src/utils/workoutPoseCounter.ts.*
 
 -   A dynamic repetition is only counted after the user moves to the
-    > recognised bottom state and returns to the top state.
+    recognised bottom state and returns to the top state.
 
 -   A 900 ms debounce prevents rapid duplicate counts.
 
 -   Static holds require confidence of at least 0.78, no active warning,
-    > and 1.8 seconds of stability.
+    and 1.8 seconds of stability.
 
 -   Repetitions are capped at the configured target.
 
 -   When landmarks are missing, the user receives a framing instruction
-    > rather than an inferred result.
+    rather than an inferred result.
 
 -   Spoken feedback is rate-limited, so cues do not overlap
-    > continuously.
+    continuously.
 
 ## **Scoring**
 
@@ -454,8 +450,7 @@ anxiety while keeping the movement feedback visible.
 
 *Figure 13. 3D Avatar Tech Stack*
 
-The avatar website
-([[activesense.dpdns.org]{.ul}](http://activesense.dpdns.org)) is
+The avatar website (http://activesense.dpdns.org) is
 registered using Digitalplat free domain. The setup uses cloudflare
 workers and pages with the registered free domain and an Azure Ubuntu VM
 to host the avatar configuration and live model to be used for the app.
@@ -508,31 +503,31 @@ updated_at values reliable.
 # 12. Privacy, Security, and Ethical Considerations
 
 -   **Local camera processing:** raw pose frames are analysed in the
-    > client; session persistence contains derived values rather than
-    > video.
+    client; session persistence contains derived values rather than
+    video.
 
 -   **Permission gating:** the camera is requested only for camera-led
-    > workouts and the UI provides actionable permission/error messages.
+    workouts and the UI provides actionable permission/error messages.
 
 -   **Authentication:** Supabase Auth manages email/password credentials
-    > and persistent sessions.
+    and persistent sessions.
 
 -   **Row Level Security:** user-owned tables use policies based on
-    > auth.uid().
+    auth.uid().
 
 -   **Least privilege:** the client uses the public anonymous key;
-    > service-role credentials must never be included in the application
-    > bundle.
+    service-role credentials must never be included in the application
+    bundle.
 
 -   **Atomic operations:** points awards, redemptions and coupon usage
-    > updates are performed by authenticated server-side functions.
+    updates are performed by authenticated server-side functions.
 
 -   **Sensitive profile data:** age supports the basic Home ranking,
-    > while medical considerations are currently stored for profile
-    > display and user context only.
+    while medical considerations are currently stored for profile
+    display and user context only.
 
 -   **Medical boundary:** ActiveSense provides general exercise feedback
-    > and is not clinically validated as a medical device.
+    and is not clinically validated as a medical device.
 
 Before public deployment, configuration files should be audited so that
 only intended public Expo values are tracked, all secrets remain in
@@ -695,16 +690,16 @@ participants 1 to 4.
 ## User Testing findings
 
 -   Camera positioning is the most consistent usability risk across age
-    > groups.
+    groups.
 
 -   Health points should be described as motivational points rather than
-    > a clinical measurement.
+    a clinical measurement.
 
 -   Pose thresholds require physical-device validation with different
-    > ages and ranges of motion.
+    ages and ranges of motion.
 
 -   Ready and Used coupon states need a concise explanation before
-    > redemption.
+    redemption.
 
 ## Structured follow-up study
 
@@ -734,16 +729,16 @@ unless explicitly required and consented to.
 4.  Complete five squats while following visual and spoken feedback.
 
 5.  Finish the workout and locate the updated health points and weekly
-    > activity.
+    activity.
 
 6.  Inspect the rewards shop and explain why a reward is locked,
-    > redeemable, or already open.
+    redeemable, or already open.
 
 7.  Open a redeemed coupon, locate its barcode, and explain the Ready
-    > and Used states.
+    and Used states.
 
 8.  Find the current privacy label and health profile, edit the avatar,
-    > then locate the camera/avatar view toggle during a workout.
+    then locate the camera/avatar view toggle during a workout.
 
 ### Measurements
 
@@ -805,39 +800,39 @@ unavailable.
 # **17. Known Limitations**
 
 -   **Heuristic accuracy:** posture thresholds and the nearest-centroid
-    > classifier are not trained or validated on a large, diverse
-    > clinical dataset.
+    classifier are not trained or validated on a large, diverse
+    clinical dataset.
 
 -   **Monocular camera:** one camera cannot reliably capture every
-    > three-dimensional joint relationship.
+    three-dimensional joint relationship.
 
 -   **Environmental sensitivity:** lighting, background contrast, camera
-    > angle, distance, loose clothing and occlusion affect landmarks.
+    angle, distance, loose clothing and occlusion affect landmarks.
 
 -   **Body diversity:** fixed thresholds may behave differently across
-    > body proportions, mobility ranges, and assistive-device use.
+    body proportions, mobility ranges, and assistive-device use.
 
 -   **Device performance:** pose inference and 3D rendering can reduce
-    > frame rate or increase heat on older devices.
+    frame rate or increase heat on older devices.
 
 -   **Prototype incentives:** Healthpoints and vouchers demonstrate the
-    > reward loop but do not represent an external commercial or
-    > government partnership.
+    reward loop but do not represent an external commercial or
+    government partnership.
 
 -   **Merchant integration:** the barcode and mark_voucher_used function
-    > demonstrate coupon handling, but no external merchant scanner,
-    > payment system or partner validation service is connected.
+    demonstrate coupon handling, but no external merchant scanner,
+    payment system or partner validation service is connected.
 
 -   **User evaluation:** a formal representative user study is still
-    > required before making strong usability or safety claims.
+    required before making strong usability or safety claims.
 
 -   **Accessibility:** spoken cues and large touch targets help, but
-    > full screen-reader, contrast, dynamic-text and reduced-motion
-    > audits remain future work.
+    full screen-reader, contrast, dynamic-text and reduced-motion
+    audits remain future work.
 
 -   **Production operations:** app-store release, monitoring, crash
-    > analytics, secret rotation and disaster recovery are outside the
-    > current academic prototype.
+    analytics, secret rotation and disaster recovery are outside the
+    current academic prototype.
 
 # **18. Deployment and Local Setup**
 
@@ -852,44 +847,34 @@ requirements.
 -   **All platforms:** Git, Node.js 20 or newer, and npm.
 
 -   **Web:** a current Chrome, Safari, or Edge browser with camera
-    > access.
+    access.
 
 -   **iOS:** macOS, Xcode, Xcode Command Line Tools, and CocoaPods. A
-    > physical build also requires an Apple ID for code signing.
+    physical build also requires an Apple ID for code signing.
 
 -   **Android:** Android Studio, the Android software development kit
-    > (SDK), and a supported Java Development Kit (JDK). A physical
-    > device must have Developer Options and Universal Serial Bus (USB)
-    > debugging enabled.
+    (SDK), and a supported Java Development Kit (JDK). A physical
+    device must have Developer Options and Universal Serial Bus (USB)
+    debugging enabled.
 
 -   **Backend:** a Supabase project and either the PostgreSQL psql
-    > client or access to the Supabase Structured Query Language (SQL)
-    > Editor.
+    client or access to the Supabase Structured Query Language (SQL)
+    Editor.
 
 ## **1. Clone and install the shared project**
-
-+------------------------------------------------------+
-| git clone https://github.com/dragcom/ActiveSense.git |
-|                                                      |
-| cd ActiveSense/ActiveSense                           |
-|                                                      |
-| npm install                                          |
-+------------------------------------------------------+
+git clone https://github.com/dragcom/ActiveSense.git
+cd ActiveSense/ActiveSense
+npm install
 
 Run all remaining commands from ActiveSense/ActiveSense. If the
 repository has already been cloned, start from npm install.
 
 ## **Environment variables**
 
-+------------------------------------------+
-| EXPO_PUBLIC_SUPABASE_URL=\...            |
-|                                          |
-| EXPO_PUBLIC_SUPABASE_ANON_KEY=\...       |
-|                                          |
-| EXPO_PUBLIC_AVATAR_CREATOR_URL=\...      |
-|                                          |
-| EXPO_PUBLIC_AVATAR_CREATOR_URL_LIVE=\... |
-+------------------------------------------+
+EXPO_PUBLIC_SUPABASE_URL=\...            
+EXPO_PUBLIC_SUPABASE_ANON_KEY=\...                                 
+EXPO_PUBLIC_AVATAR_CREATOR_URL=\...                            
+EXPO_PUBLIC_AVATAR_CREATOR_URL_LIVE=\... 
 
 The tracked .env contains only public Expo configuration, including the
 Supabase project uniform resource locator (URL), anonymous or
@@ -905,28 +890,20 @@ default avatar.
 identifier (URI) from Supabase under Project Settings, Database,
 Connection string, URI, then run:
 
-+-------------------+
-| npm run db:schema |
-|                   |
-| npm run db:seed   |
-|                   |
-| npm run db:verify |
-|                   |
-| npx tsc \--noEmit |
-+-------------------+
+npm run db:schema 
+npm run db:seed
+npm run db:verify
+npx tsc \--noEmit
+
 
 The database commands require SUPABASE_DB_URL to be set in the current
 terminal. For example:
 
-+----------------------------------------------------------------------+
-| export                                                               |
-| SUPABASE_DB_URL=\"postgresql://p                                     |
-| ostgres:\<password\>\@db.\<project-ref\>.supabase.co:5432/postgres\" |
-|                                                                      |
-| npm run db:setup                                                     |
-|                                                                      |
-| npm run db:verify                                                    |
-+----------------------------------------------------------------------+
+export SUPABASE_DB_URL=\"postgresql://p                                     
+ostgres:\<password\>\@db.\<project-ref\>.supabase.co:5432/postgres\"                                                      
+npm run db:setup                                                                                                           
+npm run db:verify                                                    
+
 
 **Option B, Supabase SQL Editor:** if psql is unavailable, open the SQL
 Editor, run db/schema.sql, then run db/seed.sql. The order matters
@@ -939,14 +916,10 @@ db/seed.sql. This adds lifetime health points, redemption codes, coupon
 usage fields, and the revised RPC functions while preserving existing
 user and workout data.
 
-+----------------------------------------------------------------------+
-| psql \"\$SUPABASE_DB_URL\" -f                                        |
-| db/migration_lifetime_healthpoints_redemptions.sql                   |
-|                                                                      |
-| npm run db:seed                                                      |
-|                                                                      |
-| npm run db:verify                                                    |
-+----------------------------------------------------------------------+
+psql \"\$SUPABASE_DB_URL\" -f                                   
+db/migration_lifetime_healthpoints_redemptions.sql             
+npm run db:seed                                                                                                           
+npm run db:verify                                                   
 
 SUPABASE_SERVICE_ROLE_KEY is optional and belongs only in .env.local. It
 is needed when the verifier should delete its temporary Auth user and
@@ -978,15 +951,11 @@ administrative cleanup check.
 4.  If CocoaPods is out of sync, run the repair commands below and
     > rebuild.
 
-+-------------+
-| cd ios      |
-|             |
-| pod install |
-|             |
-| cd ..       |
-|             |
-| npm run ios |
-+-------------+
+cd ios        
+pod install  
+cd ..       
+npm run ios 
+
 
 The iOS Simulator is suitable for navigation and interface checks, but
 its camera behaviour does not represent a real device. Use a physical
@@ -1045,17 +1014,12 @@ start \--clear from the application folder and reopen ActiveSense.
 If the Expo device command does not install the build, use the native
 Gradle fallback:
 
-+-----------------------------+
-| cd android                  |
-|                             |
-| ./gradlew app:assembleDebug |
-|                             |
-| ./gradlew app:installDebug  |
-|                             |
-| cd ..                       |
-|                             |
-| npx expo start \--clear     |
-+-----------------------------+
+cd android                  
+./gradlew app:assembleDebug    
+./gradlew app:installDebug       
+cd ..                       
+npx expo start \--clear     
+
 
 If the phone cannot discover the development server over the local
 network, try npx expo start \--clear \--tunnel. Changing the phone to a
@@ -1138,32 +1102,29 @@ moderated social challenges.
 # **21. References**
 
 1.  NUS Yong Loo Lin School of Medicine. (2020, October 1). *NUS study
-    > finds high prevalence of fear of falling and association of its
-    > resultant activity restriction with frailty and sarcopenia in
-    > Singapore elderly.*
-    > [[https://medicine.nus.edu.sg/news/nus-study-finds-high-prevalence-of-fear-of-falling-and-association-of-its-resultant-activity-restriction-with-frailty-and-sarcopenia-in-singapore-elderly/]{.ul}](https://medicine.nus.edu.sg/news/nus-study-finds-high-prevalence-of-fear-of-falling-and-association-of-its-resultant-activity-restriction-with-frailty-and-sarcopenia-in-singapore-elderly/)
+    finds high prevalence of fear of falling and association of its
+    resultant activity restriction with frailty and sarcopenia in
+    Singapore elderly.*
+    [[https://medicine.nus.edu.sg/news/nus-study-finds-high-prevalence-of-fear-of-falling-and-association-of-its-resultant-activity-restriction-with-frailty-and-sarcopenia-in-singapore-elderly/]{.ul}](https://medicine.nus.edu.sg/news/nus-study-finds-high-prevalence-of-fear-of-falling-and-association-of-its-resultant-activity-restriction-with-frailty-and-sarcopenia-in-singapore-elderly/)
 
 2.  Kerk, C. (2023, August 10). *Declining physical health putting a
-    > strain on Singapore workers\' mental well-being: Study.* The
-    > Business Times.
-    > [[https://www.businesstimes.com.sg/lifestyle/declining-physical-health-putting-strain-singapore-workers-mental-well-being-study]{.ul}](https://www.businesstimes.com.sg/lifestyle/declining-physical-health-putting-strain-singapore-workers-mental-well-being-study)
+    strain on Singapore workers\' mental well-being: Study.* The
+    Business Times.
+    [[https://www.businesstimes.com.sg/lifestyle/declining-physical-health-putting-strain-singapore-workers-mental-well-being-study]{.ul}](https://www.businesstimes.com.sg/lifestyle/declining-physical-health-putting-strain-singapore-workers-mental-well-being-study)
 
 3.  Google. (n.d.). *\@mediapipe/tasks-vision.* npm.
-    > [[https://www.npmjs.com/package/\@mediapipe/tasks-vision]{.ul}](https://www.npmjs.com/package/@mediapipe/tasks-vision)
+    [[https://www.npmjs.com/package/\@mediapipe/tasks-vision]{.ul}](https://www.npmjs.com/package/@mediapipe/tasks-vision)
 
 4.  Wawa Sensi. (n.d.). Build a 3D avatar builder with Threejs and
-    > react - full course - youtube.
-    > [[https://www.youtube.com/watch?v=yA4BpGqT3-s]{.ul}](https://www.youtube.com/watch?v=yA4BpGqT3-s)
+    react - full course - youtube.
+    [[https://www.youtube.com/watch?v=yA4BpGqT3-s]{.ul}](https://www.youtube.com/watch?v=yA4BpGqT3-s)
 
 5.  Expo. (n.d.). *Expo documentation.*
-    > [[https://docs.expo.dev/]{.ul}](https://docs.expo.dev/)
+    [[https://docs.expo.dev/]{.ul}](https://docs.expo.dev/)
 
 6.  Supabase. (n.d.). *Row Level Security.* Supabase Documentation.
-    > [[https://supabase.com/docs/guides/database/postgres/row-level-security]{.ul}](https://supabase.com/docs/guides/database/postgres/row-level-security)
+    [https://supabase.com/docs/guides/database/postgres/row-level-security]{.ul}](https://supabase.com/docs/guides/database/postgres/row-level-security)
 
 7.  React Navigation. (n.d.). *Getting started.* React Navigation
-    > Documentation.
-    > [[https://reactnavigation.org/docs/getting-started]{.ul}](https://reactnavigation.org/docs/getting-started)
-
-8.  dragcom. (2026). *ActiveSense* \[Source code\]. GitHub.
-    > [[https://github.com/dragcom/ActiveSense]{.ul}](https://github.com/dragcom/ActiveSense)
+    Documentation.
+    [https://reactnavigation.org/docs/getting-started]{.ul}](https://reactnavigation.org/docs/getting-started)
