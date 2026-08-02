@@ -4,7 +4,9 @@
 
 Milestone III Final Technical README
 
-**Project ID:** 6899 **Level of Achievement:** Project Gemini
+**Project ID:** 6899 
+
+**Level of Achievement:** Project Gemini
 
 **Team members:** Tan Yi Xun and Chan Yi Long
 
@@ -433,19 +435,10 @@ landmarks can be mapped to an avatar rig so that the user can focus on a
 simplified body representation. The avatar view can reduce camera
 anxiety while keeping the movement feedback visible.
 
-![](images/media/image8.png)
-![](images/media/image11.png)
-![](images/media/image18.png)
-![](images/media/image11.png)
-![](images/media/image1.png)
-![](images/media/image11.png)
-![](images/media/image14.png)
-![](images/media/image11.png)
-![](images/media/image20.png)
-
-![](images/media/image6.png)
-![](images/media/image5.png)
-![](images/media/image27.png)
+![](images/media/image8.png)     ![](images/media/image18.png)
+![](images/media/image1.png)     ![](images/media/image14.png)
+![](images/media/image20.png)    ![](images/media/image6.png)
+![](images/media/image5.png)     ![](images/media/image27.png)
 ![](images/media/image17.png)
 
 *Figure 13. 3D Avatar Tech Stack*
@@ -563,15 +556,15 @@ drift between web, iOS, and Android.
 ## **Defensive programming**
 
 -   Missing Supabase configuration produces a readable error or
-    > controlled prototype fallback.
+    controlled prototype fallback.
 
 -   Invalid catalogue colours and incomplete database results are
-    > validated before rendering.
+    validated before rendering.
 
 -   Low-visibility pose landmarks are rejected instead of being guessed.
 
 -   Workout completion is idempotent, and reward redemption is
-    > transactional.
+    transactional.
 
 -   Remote avatar failure falls back to a default asset.
 
@@ -862,19 +855,21 @@ requirements.
     Editor.
 
 ## **1. Clone and install the shared project**
-git clone https://github.com/dragcom/ActiveSense.git
-cd ActiveSense/ActiveSense
-npm install
+> git clone https://github.com/dragcom/ActiveSense.git
+
+> cd ActiveSense/ActiveSense
+
+> npm install
 
 Run all remaining commands from ActiveSense/ActiveSense. If the
 repository has already been cloned, start from npm install.
 
 ## **Environment variables**
 
-EXPO_PUBLIC_SUPABASE_URL=\...            
-EXPO_PUBLIC_SUPABASE_ANON_KEY=\...                                 
-EXPO_PUBLIC_AVATAR_CREATOR_URL=\...                            
-EXPO_PUBLIC_AVATAR_CREATOR_URL_LIVE=\... 
+> EXPO_PUBLIC_SUPABASE_URL=\...            
+> EXPO_PUBLIC_SUPABASE_ANON_KEY=\...                                 
+> EXPO_PUBLIC_AVATAR_CREATOR_URL=\...                            
+> EXPO_PUBLIC_AVATAR_CREATOR_URL_LIVE=\... 
 
 The tracked .env contains only public Expo configuration, including the
 Supabase project uniform resource locator (URL), anonymous or
@@ -890,19 +885,19 @@ default avatar.
 identifier (URI) from Supabase under Project Settings, Database,
 Connection string, URI, then run:
 
-npm run db:schema 
-npm run db:seed
-npm run db:verify
-npx tsc \--noEmit
+> npm run db:schema 
+> npm run db:seed
+> npm run db:verify
+> npx tsc \--noEmit
 
 
 The database commands require SUPABASE_DB_URL to be set in the current
 terminal. For example:
 
-export SUPABASE_DB_URL=\"postgresql://p                                     
-ostgres:\<password\>\@db.\<project-ref\>.supabase.co:5432/postgres\"                                                      
-npm run db:setup                                                                                                           
-npm run db:verify                                                    
+> export SUPABASE_DB_URL=\"postgresql://p                                     
+> ostgres:\<password\>\@db.\<project-ref\>.supabase.co:5432/postgres\"                                                      
+> npm run db:setup                                                                                                           
+> npm run db:verify                                                    
 
 
 **Option B, Supabase SQL Editor:** if psql is unavailable, open the SQL
@@ -916,10 +911,10 @@ db/seed.sql. This adds lifetime health points, redemption codes, coupon
 usage fields, and the revised RPC functions while preserving existing
 user and workout data.
 
-psql \"\$SUPABASE_DB_URL\" -f                                   
-db/migration_lifetime_healthpoints_redemptions.sql             
-npm run db:seed                                                                                                           
-npm run db:verify                                                   
+> psql \"\$SUPABASE_DB_URL\" -f                                   
+> db/migration_lifetime_healthpoints_redemptions.sql             
+> npm run db:seed                                                                                                           
+> npm run db:verify                                                   
 
 SUPABASE_SERVICE_ROLE_KEY is optional and belongs only in .env.local. It
 is needed when the verifier should delete its temporary Auth user and
@@ -935,26 +930,26 @@ administrative cleanup check.
 3.  Allow camera access when the workout screen requests it.
 
 4.  If environment variables were changed while Expo was running, stop
-    > the server and run npx expo start \--web \--clear.
+    the server and run npx expo start \--web \--clear.
 
 ## **4. Run on the iOS Simulator**
 
 1.  Install and open Xcode once so that its licence and simulator
-    > components are available.
+    components are available.
 
 2.  From the application folder, run npm run ios. Expo builds the native
-    > project and opens an available simulator.
+    project and opens an available simulator.
 
 3.  If no simulator is running, choose one in Xcode under Open Developer
-    > Tool, Simulator, then run the command again.
+    Tool, Simulator, then run the command again.
 
 4.  If CocoaPods is out of sync, run the repair commands below and
-    > rebuild.
+    rebuild.
 
-cd ios        
-pod install  
-cd ..       
-npm run ios 
+> cd ios        
+> pod install  
+> cd ..       
+> npm run ios 
 
 
 The iOS Simulator is suitable for navigation and interface checks, but
@@ -964,22 +959,22 @@ iPhone or the browser build for live-camera pose tracking validation.
 ## **5. Run on a physical iPhone**
 
 1.  Connect the unlocked iPhone to the Mac, select **Trust** when
-    > prompted and enable Developer Mode in Settings under Privacy &
-    > Security.
+    prompted and enable Developer Mode in Settings under Privacy &
+    Security.
 
 2.  Open ios/ActiveSense.xcworkspace in Xcode. Add an Apple ID in Xcode
-    > Settings, Accounts.
+    Settings, Accounts.
 
 3.  Select the ActiveSense target, open Signing & Capabilities, enable
-    > automatic signing, and choose the appropriate development team.
+    automatic signing, and choose the appropriate development team.
 
 4.  Keep the phone connected, then run npm run ios:device and select the
-    > iPhone when Expo asks for a device.
+    iPhone when Expo asks for a device.
 
 5.  Accept the camera permission prompt on first launch.
 
 6.  If iOS blocks the development build, open Settings, General, VPN &
-    > Device Management, and trust the developer certificate.
+    Device Management, and trust the developer certificate.
 
 For live development, keep the Mac and iPhone on the same Wi-Fi network.
 If the installed application cannot reconnect to Metro, run npx expo
@@ -988,37 +983,37 @@ start \--clear from the application folder and reopen ActiveSense.
 ## **6. Run on an Android emulator**
 
 1.  Install Android Studio and the Android SDK, then create a virtual
-    > device in Device Manager.
+    device in Device Manager.
 
 2.  Start the emulator and wait for the Android home screen to load.
 
 3.  From the application folder, run npm run android. The first native
-    > build can take several minutes.
+    build can take several minutes.
 
 4.  Grant camera permission when ActiveSense requests it.
 
 ## **7. Run on a physical Android device**
 
 1.  Enable Developer Options and USB debugging on the phone. Keep the
-    > phone unlocked during the first connection.
+    phone unlocked during the first connection.
 
 2.  Connect the unlocked phone by USB and approve the computer\'s
-    > debugging key when prompted.
+    debugging key when prompted.
 
 3.  From the application folder, run npm run android:device and select
-    > the connected device.
+    the connected device.
 
 4.  Keep the development computer and phone on the same Wi-Fi network
-    > while using the Metro development server.
+    while using the Metro development server.
 
 If the Expo device command does not install the build, use the native
 Gradle fallback:
 
-cd android                  
-./gradlew app:assembleDebug    
-./gradlew app:installDebug       
-cd ..                       
-npx expo start \--clear     
+> cd android                  
+> ./gradlew app:assembleDebug    
+> ./gradlew app:installDebug       
+> cd ..                       
+> npx expo start \--clear     
 
 
 If the phone cannot discover the development server over the local
@@ -1047,7 +1042,7 @@ when DNS resolution is failing, not a standard installation requirement.
 3.  Grant the camera permission and position the full body in frame.
 
 4.  Perform controlled squats and observe skeleton overlay, feedback,
-    > spoken count, and health points.
+    spoken count, and health points.
 
 # **19. Team Contributions and Project Timeline**
 
@@ -1060,24 +1055,24 @@ when DNS resolution is failing, not a standard installation requirement.
 ## **Development timeline**
 
 -   **May 2026:** project ideation, motivation research, initial
-    > mock-ups and technology investigation.
+    mock-ups and technology investigation.
 
 -   **June 2026:** MediaPipe feasibility work, avatar experiments, React
-    > Native screens, onboarding, and early workout prototype.
+    Native screens, onboarding, and early workout prototype.
 
 -   **Late June to early July:** iOS/Android builds, avatar integration,
-    > and workout/session UI.
+    and workout/session UI.
 
 -   **July 2026:** Supabase schema and RLS, shared workout logic,
-    > expanded posture rules, spoken cues, scoring, spendable and
-    > lifetime Health Points, scannable reward coupons, progress
-    > refresh-on-focus and weekly-activity fixes through PR \#13, the PR
-    > \#14 interface and avatar consolidation, the merged PR \#15
-    > workout-catalogue alignment, and Milestone 3 documentation.
+    expanded posture rules, spoken cues, scoring, spendable and
+    lifetime Health Points, scannable reward coupons, progress
+    refresh-on-focus and weekly-activity fixes through PR \#13, the PR
+    \#14 interface and avatar consolidation, the merged PR \#15
+    workout-catalogue alignment, and Milestone 3 documentation.
 
 -   **Final refinement: complete the remaining device regression,
-    > broaden user testing, correct defects, and record the final
-    > demonstration.**
+    broaden user testing, correct defects, and record the final
+    demonstration.**
 
 # **20. Conclusion and Future Work**
 
@@ -1105,26 +1100,26 @@ moderated social challenges.
     finds high prevalence of fear of falling and association of its
     resultant activity restriction with frailty and sarcopenia in
     Singapore elderly.*
-    [[https://medicine.nus.edu.sg/news/nus-study-finds-high-prevalence-of-fear-of-falling-and-association-of-its-resultant-activity-restriction-with-frailty-and-sarcopenia-in-singapore-elderly/]{.ul}](https://medicine.nus.edu.sg/news/nus-study-finds-high-prevalence-of-fear-of-falling-and-association-of-its-resultant-activity-restriction-with-frailty-and-sarcopenia-in-singapore-elderly/)
+    https://medicine.nus.edu.sg/news/nus-study-finds-high-prevalence-of-fear-of-falling-and-association-of-its-resultant-activity-restriction-with-frailty-and-sarcopenia-in-singapore-elderly/
 
 2.  Kerk, C. (2023, August 10). *Declining physical health putting a
     strain on Singapore workers\' mental well-being: Study.* The
     Business Times.
-    [[https://www.businesstimes.com.sg/lifestyle/declining-physical-health-putting-strain-singapore-workers-mental-well-being-study]{.ul}](https://www.businesstimes.com.sg/lifestyle/declining-physical-health-putting-strain-singapore-workers-mental-well-being-study)
+    https://www.businesstimes.com.sg/lifestyle/declining-physical-health-putting-strain-singapore-workers-mental-well-being-study
 
 3.  Google. (n.d.). *\@mediapipe/tasks-vision.* npm.
-    [[https://www.npmjs.com/package/\@mediapipe/tasks-vision]{.ul}](https://www.npmjs.com/package/@mediapipe/tasks-vision)
+    https://www.npmjs.com/package/@mediapipe/tasks-vision
 
 4.  Wawa Sensi. (n.d.). Build a 3D avatar builder with Threejs and
     react - full course - youtube.
-    [[https://www.youtube.com/watch?v=yA4BpGqT3-s]{.ul}](https://www.youtube.com/watch?v=yA4BpGqT3-s)
+    https://www.youtube.com/watch?v=yA4BpGqT3-s
 
 5.  Expo. (n.d.). *Expo documentation.*
-    [[https://docs.expo.dev/]{.ul}](https://docs.expo.dev/)
+    https://docs.expo.dev/
 
 6.  Supabase. (n.d.). *Row Level Security.* Supabase Documentation.
-    [https://supabase.com/docs/guides/database/postgres/row-level-security]{.ul}](https://supabase.com/docs/guides/database/postgres/row-level-security)
+    https://supabase.com/docs/guides/database/postgres/row-level-security
 
 7.  React Navigation. (n.d.). *Getting started.* React Navigation
     Documentation.
-    [https://reactnavigation.org/docs/getting-started]{.ul}](https://reactnavigation.org/docs/getting-started)
+    https://reactnavigation.org/docs/getting-started
