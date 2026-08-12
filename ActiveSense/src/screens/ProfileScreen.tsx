@@ -245,7 +245,7 @@ export default function ProfileScreen() {
               </Text>
             </View>
             <Text style={{ fontSize: 12, color: colors.text.secondary, textAlign: 'center' }}>
-              NUS Orbital 26 Project • Level Gemini
+              NUS Orbital 26 Project • Level Apollo
             </Text>
             <Text style={{ fontSize: 10, color: colors.text.tertiary, textAlign: 'center', marginTop: 4 }}>
               Version 1.0.0
