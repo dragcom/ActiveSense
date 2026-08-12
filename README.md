@@ -2,15 +2,14 @@
 
 # **ActiveSense**
 
-Milestone III Final Technical README
+Final Technical README
 
 **Project ID:** 6899 
 
-**Level of Achievement:** Project Gemini
+**Level of Achievement:** Project Apollo
 
 **Team members:** Tan Yi Xun and Chan Yi Long
 
-Implementation snapshot: 26 July 2026
 
 # **Executive Summary**
 
