@@ -2,6 +2,8 @@
 
 # **ActiveSense**
 
+[🔗 Watch the Demo Video](https://drive.google.com/file/d/1zJyWWSn94E_LXBhyZaa6br_LwqDLEI2y/view?usp=sharing)
+
 Final Technical README
 
 **Project ID:** 6899 
